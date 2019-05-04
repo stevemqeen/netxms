@@ -19,6 +19,7 @@
 package org.netxms.client.objects;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import org.netxms.base.NXCPCodes;
 import org.netxms.base.NXCPMessage;
@@ -30,7 +31,7 @@ import org.netxms.client.NXCSession;
 public class Zone extends GenericObject
 {
 	private long uin;
-	private long proxyNodeId;
+	private List<Long> proxyNodes;
 	private List<String> snmpPorts;
 	
 	/**
@@ -43,7 +44,12 @@ public class Zone extends GenericObject
 	{
 		super(msg, session);
 		uin = msg.getFieldAsInt64(NXCPCodes.VID_ZONE_UIN);
-		proxyNodeId = msg.getFieldAsInt64(NXCPCodes.VID_ZONE_PROXY);
+		int size = msg.getFieldAsInt32(NXCPCodes.VID_ZONE_PROXY_COUNT);
+		proxyNodes = new ArrayList<Long>(size);
+      for(int i = 0; i < size; i++)
+      {
+         proxyNodes.add(msg.getFieldAsInt64(NXCPCodes.VID_ZONE_PROXY_BASE + i));
+      }
 		snmpPorts = new ArrayList<String>(msg.getFieldAsInt32(NXCPCodes.VID_ZONE_SNMP_PORT_COUNT));
 		for(int i = 0; i < msg.getFieldAsInt32(NXCPCodes.VID_ZONE_SNMP_PORT_COUNT); i++)
 		{
@@ -77,14 +83,26 @@ public class Zone extends GenericObject
 	public long getUIN()
 	{
 		return uin;
-	}
-	
+	}  
+
+
    /**
-    * @return the proxyNodeId
+    * @return List of proxy nodes
     */
-   public long getProxyNodeId()
+   public AbstractObject[] getProxyNodes()
    {
-      return proxyNodeId;
+      final AbstractObject[] list = new AbstractObject[proxyNodes.size()];
+      final Iterator<Long> it = proxyNodes.iterator();
+      for(int i = 0; it.hasNext(); i++)
+      {
+         long id = it.next();
+         AbstractObject o = session.findObjectById(id);
+         if (o != null)
+            list[i] = o;
+         else
+            list[i] = new UnknownObject(id, session);
+      }
+      return list;
    }
 
    /* (non-Javadoc)

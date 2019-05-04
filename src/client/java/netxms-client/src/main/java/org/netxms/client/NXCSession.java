@@ -5557,7 +5557,9 @@ public class NXCSession
 
       if (data.isFieldSet(NXCObjectModificationData.ZONE_PROXY))
       {
-         msg.setFieldInt32(NXCPCodes.VID_ZONE_PROXY, (int)data.getZoneProxy());
+         msg.setFieldInt32(NXCPCodes.VID_ZONE_PROXY_COUNT, data.getZoneProxies().size());
+         final Long[] nodes = data.getZoneProxies().toArray(new Long[data.getZoneProxies().size()]);
+         msg.setField(NXCPCodes.VID_ZONE_PROXY_BASE, nodes);
       }
 
       if (data.isFieldSet(NXCObjectModificationData.SEED_OBJECTS))

@@ -226,7 +226,7 @@ public class NXCObjectModificationData
    private long sshProxy;
    private String sshLogin;
    private String sshPassword;
-   private long zoneProxy;
+   private Set<Long> zoneProxies;
    private List<ObjectUrl> urls;
    private List<Long> seedObjectIds;
    private MacAddress macAddress;
@@ -1770,19 +1770,19 @@ public class NXCObjectModificationData
    }
 
    /**
-    * @return the zoneProxy
+    * @return the zoneProxies
     */
-   public long getZoneProxy()
+   public Set<Long> getZoneProxies()
    {
-      return zoneProxy;
+      return zoneProxies;
    }
 
    /**
-    * @param zoneProxy the zoneProxy to set
+    * @param zoneProxies the zoneProxies to set
     */
-   public void setZoneProxy(long zoneProxy)
+   public void setZoneProxies(Set<Long> zoneProxies)
    {
-      this.zoneProxy = zoneProxy;
+      this.zoneProxies = zoneProxies;
       fieldSet.add(ZONE_PROXY);
    }
 

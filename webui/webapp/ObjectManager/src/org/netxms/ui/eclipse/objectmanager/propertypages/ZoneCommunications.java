@@ -18,19 +18,21 @@
  */
 package org.netxms.ui.eclipse.objectmanager.propertypages;
 
+import java.util.HashMap;
+import java.util.Set;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.layout.FillLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.ui.dialogs.PropertyPage;
 import org.netxms.client.NXCObjectModificationData;
 import org.netxms.client.NXCSession;
+import org.netxms.client.objects.AbstractNode;
+import org.netxms.client.objects.AbstractObject;
 import org.netxms.client.objects.Zone;
 import org.netxms.ui.eclipse.jobs.ConsoleJob;
-import org.netxms.ui.eclipse.objectbrowser.api.ObjectSelectionFilterFactory;
-import org.netxms.ui.eclipse.objectbrowser.widgets.ObjectSelector;
+import org.netxms.ui.eclipse.objectbrowser.widgets.ObjectList;
 import org.netxms.ui.eclipse.objectmanager.Activator;
 import org.netxms.ui.eclipse.objectmanager.Messages;
 import org.netxms.ui.eclipse.shared.ConsoleSharedData;
@@ -41,7 +43,8 @@ import org.netxms.ui.eclipse.shared.ConsoleSharedData;
 public class ZoneCommunications extends PropertyPage
 {
 	private Zone zone;
-	private ObjectSelector agentProxy;
+   private ObjectList objList = null;
+   private boolean isModified = false;
 	
 	/* (non-Javadoc)
 	 * @see org.eclipse.jface.preference.PreferencePage#createContents(org.eclipse.swt.widgets.Composite)
@@ -51,20 +54,26 @@ public class ZoneCommunications extends PropertyPage
 	{
 		zone = (Zone)getElement().getAdapter(Zone.class);
 
-		Composite dialogArea = new Composite(parent, SWT.NONE);
-		GridLayout dialogLayout = new GridLayout();
-		dialogLayout.marginWidth = 0;
-		dialogLayout.marginHeight = 0;
-		dialogArea.setLayout(dialogLayout);
+		Composite dialogArea = new Composite(parent, SWT.NONE);		
+      dialogArea.setLayout(new FillLayout());   
+		
 
-		agentProxy = new ObjectSelector(dialogArea, SWT.NONE, true);
-		agentProxy.setLabel(Messages.get().ZoneCommunications_DefaultProxy);
-      agentProxy.setClassFilter(ObjectSelectionFilterFactory.getInstance().createNodeSelectionFilter(false));
-		agentProxy.setObjectId(zone.getProxyNodeId());
-		GridData gd = new GridData();
-		gd.horizontalAlignment = SWT.FILL;
-		gd.grabExcessHorizontalSpace = true;
-		agentProxy.setLayoutData(gd);
+      HashMap<Long, AbstractObject> proxyNodes = new HashMap<Long, AbstractObject>(0);
+      AbstractObject[] nodes = zone.getProxyNodes();
+      for(int i = 0; i < nodes.length; i++)
+      {
+         if (nodes[i] != null)
+            proxyNodes.put(nodes[i].getObjectId(), nodes[i]);
+      }
+
+      objList = new ObjectList(dialogArea, SWT.NONE, Messages.get().TrustedNodes_Node, proxyNodes, AbstractNode.class, new Runnable() {
+         
+         @Override
+         public void run()
+         {
+            isModified = true;
+         }
+      });
       
 		return dialogArea;
 	}
@@ -76,11 +85,15 @@ public class ZoneCommunications extends PropertyPage
 	 */
 	protected boolean applyChanges(final boolean isApply)
 	{
+      if (!isModified)
+         return true;     // Nothing to apply
+      
 		if (isApply)
 			setValid(false);
 		
 		final NXCObjectModificationData md = new NXCObjectModificationData(zone.getObjectId());
-		md.setZoneProxy(agentProxy.getObjectId());
+		Set<Long> idList = objList.getObjects().keySet();
+      md.setZoneProxies(idList);
 		
 		final NXCSession session = (NXCSession)ConsoleSharedData.getSession();
 		new ConsoleJob(String.format(Messages.get().ZoneCommunications_JobName, zone.getObjectName()), null, Activator.PLUGIN_ID, null) {
@@ -139,6 +152,7 @@ public class ZoneCommunications extends PropertyPage
 	protected void performDefaults()
 	{
 		super.performDefaults();
-		agentProxy.setObjectId(0);
+      isModified = true;
+		objList.performDefaults();
 	}
 }

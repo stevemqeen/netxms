@@ -19,37 +19,22 @@
 package org.netxms.ui.eclipse.objectmanager.propertypages;
 
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Set;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.jface.viewers.ArrayContentProvider;
-import org.eclipse.jface.viewers.ILabelProvider;
-import org.eclipse.jface.viewers.IStructuredSelection;
-import org.eclipse.jface.window.Window;
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.events.SelectionEvent;
-import org.eclipse.swt.events.SelectionListener;
-import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.layout.GridLayout;
-import org.eclipse.swt.layout.RowData;
-import org.eclipse.swt.layout.RowLayout;
-import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.layout.FillLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.ui.dialogs.PropertyPage;
-import org.eclipse.ui.model.WorkbenchLabelProvider;
 import org.netxms.client.NXCObjectModificationData;
 import org.netxms.client.NXCSession;
 import org.netxms.client.objects.AbstractNode;
 import org.netxms.client.objects.AbstractObject;
 import org.netxms.ui.eclipse.jobs.ConsoleJob;
-import org.netxms.ui.eclipse.objectbrowser.dialogs.ObjectSelectionDialog;
+import org.netxms.ui.eclipse.objectbrowser.widgets.ObjectList;
 import org.netxms.ui.eclipse.objectmanager.Activator;
 import org.netxms.ui.eclipse.objectmanager.Messages;
 import org.netxms.ui.eclipse.shared.ConsoleSharedData;
-import org.netxms.ui.eclipse.tools.ObjectLabelComparator;
-import org.netxms.ui.eclipse.tools.WidgetHelper;
-import org.netxms.ui.eclipse.widgets.SortableTableViewer;
 
 /**
  *"Trusted nodes" property page for NetXMS objects
@@ -59,10 +44,7 @@ public class TrustedNodes extends PropertyPage
 	public static final int COLUMN_NAME = 0;
 	
 	private AbstractObject object = null;
-	private SortableTableViewer viewer;
-	private Button addButton;
-	private Button deleteButton;
-	private HashMap<Long, AbstractObject> trustedNodes = new HashMap<Long, AbstractObject>(0);
+	private ObjectList objList = null;
 	private boolean isModified = false;
 
 	/* (non-Javadoc)
@@ -73,105 +55,25 @@ public class TrustedNodes extends PropertyPage
 	{
 		Composite dialogArea = new Composite(parent, SWT.NONE);
 		
-		object = (AbstractObject)getElement().getAdapter(AbstractObject.class);
-		
-		GridLayout layout = new GridLayout();
-		layout.verticalSpacing = WidgetHelper.OUTER_SPACING;
-		layout.marginWidth = 0;
-		layout.marginHeight = 0;
-      dialogArea.setLayout(layout);
-      
-      final String[] columnNames = { Messages.get().TrustedNodes_Node };
-      final int[] columnWidths = { 300 };
-      viewer = new SortableTableViewer(dialogArea, columnNames, columnWidths, 0, SWT.UP,
-                                       SWT.BORDER | SWT.MULTI | SWT.FULL_SELECTION);
-      viewer.setContentProvider(new ArrayContentProvider());
-      viewer.setLabelProvider(new WorkbenchLabelProvider());
-      viewer.setComparator(new ObjectLabelComparator((ILabelProvider)viewer.getLabelProvider()));
-      
+		object = (AbstractObject)getElement().getAdapter(AbstractObject.class); 
+      dialogArea.setLayout(new FillLayout());   
+
+      HashMap<Long, AbstractObject> trustedNodes = new HashMap<Long, AbstractObject>(0);
       AbstractObject[] nodes = object.getTrustedNodes();
       for(int i = 0; i < nodes.length; i++)
       {
-      	if (nodes[i] != null)
-      		trustedNodes.put(nodes[i].getObjectId(), nodes[i]);
+         if (nodes[i] != null)
+            trustedNodes.put(nodes[i].getObjectId(), nodes[i]);
       }
-      viewer.setInput(trustedNodes.values().toArray());
       
-      GridData gridData = new GridData();
-      gridData.verticalAlignment = GridData.FILL;
-      gridData.grabExcessVerticalSpace = true;
-      gridData.horizontalAlignment = GridData.FILL;
-      gridData.grabExcessHorizontalSpace = true;
-      gridData.heightHint = 0;
-      viewer.getControl().setLayoutData(gridData);
-      
-      Composite buttons = new Composite(dialogArea, SWT.NONE);
-      RowLayout buttonLayout = new RowLayout();
-      buttonLayout.type = SWT.HORIZONTAL;
-      buttonLayout.pack = false;
-      buttonLayout.marginWidth = 0;
-      buttons.setLayout(buttonLayout);
-      gridData = new GridData();
-      gridData.horizontalAlignment = SWT.RIGHT;
-      buttons.setLayoutData(gridData);
-
-      addButton = new Button(buttons, SWT.PUSH);
-      addButton.setText(Messages.get().TrustedNodes_Add);
-      addButton.addSelectionListener(new SelectionListener() {
-			@Override
-			public void widgetDefaultSelected(SelectionEvent e)
-			{
-				widgetSelected(e);
-			}
-
-			@Override
-			public void widgetSelected(SelectionEvent e)
-			{
-				ObjectSelectionDialog dlg = new ObjectSelectionDialog(getShell(), null, ObjectSelectionDialog.createNodeSelectionFilter(true));
-				if (dlg.open() == Window.OK)
-				{
-					AbstractObject[] nodes = dlg.getSelectedObjects(AbstractNode.class);
-			      for(int i = 0; i < nodes.length; i++)
-			      	trustedNodes.put(nodes[i].getObjectId(), nodes[i]);
-			      viewer.setInput(trustedNodes.values().toArray());
-			      isModified = true;
-				}
-			}
+      objList = new ObjectList(dialogArea, SWT.NONE, Messages.get().TrustedNodes_Node, trustedNodes, AbstractNode.class, new Runnable() {
+         
+         @Override
+         public void run()
+         {
+            isModified = true;
+         }
       });
-      RowData rd = new RowData();
-      rd.width = WidgetHelper.BUTTON_WIDTH_HINT;
-      addButton.setLayoutData(rd);
-		
-      deleteButton = new Button(buttons, SWT.PUSH);
-      deleteButton.setText(Messages.get().TrustedNodes_Delete);
-      deleteButton.addSelectionListener(new SelectionListener() {
-			@Override
-			public void widgetDefaultSelected(SelectionEvent e)
-			{
-				widgetSelected(e);
-			}
-
-			@SuppressWarnings("unchecked")
-			@Override
-			public void widgetSelected(SelectionEvent e)
-			{
-				IStructuredSelection selection = (IStructuredSelection)viewer.getSelection();
-				Iterator<AbstractObject> it = selection.iterator();
-				if (it.hasNext())
-				{
-					while(it.hasNext())
-					{
-						AbstractObject object = it.next();
-						trustedNodes.remove(object.getObjectId());
-					}
-			      viewer.setInput(trustedNodes.values().toArray());
-			      isModified = true;
-				}
-			}
-      });
-      rd = new RowData();
-      rd.width = WidgetHelper.BUTTON_WIDTH_HINT;
-      deleteButton.setLayoutData(rd);
       
 		return dialogArea;
 	}
@@ -191,7 +93,7 @@ public class TrustedNodes extends PropertyPage
 		
 		final NXCSession session = (NXCSession)ConsoleSharedData.getSession();
 		final NXCObjectModificationData md = new NXCObjectModificationData(object.getObjectId());
-		Set<Long> idList = trustedNodes.keySet();
+		Set<Long> idList = objList.getObjects().keySet();
 		long[] nodes = new long[idList.size()];
 		int i = 0;
 		for(long id : idList)
@@ -253,8 +155,7 @@ public class TrustedNodes extends PropertyPage
 	@Override
 	protected void performDefaults()
 	{
-		trustedNodes.clear();
-		viewer.setInput(new AbstractObject[0]);
+		objList.performDefaults();
 		isModified = true;
 		super.performDefaults();
 	}

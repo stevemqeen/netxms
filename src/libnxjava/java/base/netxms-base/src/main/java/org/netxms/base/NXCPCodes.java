@@ -957,7 +957,7 @@ public class NXCPCodes
    public static final long VID_SSH_LOGIN = 546;
    public static final long VID_SSH_PASSWORD = 547;
    public static final long VID_SSH_PROXY = 548;
-   public static final long VID_ZONE_PROXY = 549;
+   public static final long VID_ZONE_PROXY_COUNT = 549;
    public static final long VID_MESSAGE_LENGTH = 550;
    public static final long VID_LDAP_DN = 551;
    public static final long VID_LDAP_ID = 552;
@@ -1141,4 +1141,5 @@ public class NXCPCodes
    public static final long VID_CONFIG_HINT_LIST_BASE= 0x10000000L;
    public static final long VID_TIMER_LIST_BASE= 0x60000000L;
    public static final long VID_AGENT_POLICY_BASE = 0x10000000L;
+   public static final long VID_ZONE_PROXY_BASE = 0x10000000L;
 }

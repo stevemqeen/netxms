@@ -35,7 +35,7 @@ Zone::Zone() : super()
    m_id = 0;
    m_uin = 0;
    _tcscpy(m_name, _T("Default"));
-   m_proxyNodeId = 0;
+   m_proxyNodes = new ObjectArray<ZoneProxy>(0, 16, true);
 	m_idxNodeByAddr = new InetAddressIndex;
 	m_idxInterfaceByAddr = new InetAddressIndex;
 	m_idxSubnetByAddr = new InetAddressIndex;
@@ -49,7 +49,7 @@ Zone::Zone(UINT32 uin, const TCHAR *name) : super()
    m_id = 0;
    m_uin = uin;
    _tcslcpy(m_name, name, MAX_OBJECT_NAME);
-   m_proxyNodeId = 0;
+   m_proxyNodes = new ObjectArray<ZoneProxy>(0, 16, true);
 	m_idxNodeByAddr = new InetAddressIndex;
 	m_idxInterfaceByAddr = new InetAddressIndex;
 	m_idxSubnetByAddr = new InetAddressIndex;
@@ -60,6 +60,7 @@ Zone::Zone(UINT32 uin, const TCHAR *name) : super()
  */
 Zone::~Zone()
 {
+   delete m_proxyNodes;
 	delete m_idxNodeByAddr;
 	delete m_idxInterfaceByAddr;
 	delete m_idxSubnetByAddr;
@@ -119,8 +120,10 @@ bool Zone::loadFromDatabase(DB_HANDLE hdb, UINT32 dwId)
          DBBind(hStmt, 1, DB_SQLTYPE_INTEGER, dwId);
          hResult = DBSelectPrepared(hStmt);
          if (hResult != NULL)
-         {
-            m_proxyNodeId = DBGetFieldULong(hResult, 0, 0);
+         { 
+            int count = DBGetNumRows(zoneProxyResult);
+            for(int i = 0; i < count; i++)
+               m_proxyNodes->add(new ZoneProxy(DBGetFieldULong(hResult, i, 0)));
             DBFreeResult(hResult);
             success = true;
          }
@@ -176,9 +179,12 @@ bool Zone::saveToDatabase(DB_HANDLE hdb)
       DB_STATEMENT hStmt = DBPrepare(hdb, _T("INSERT INTO zone_proxies (object_id,proxy_node) VALUES (?,?)"));
       if (hStmt != NULL)
       {
-         DBBind(hStmt, 1, DB_SQLTYPE_INTEGER, m_id);
-         DBBind(hStmt, 2, DB_SQLTYPE_INTEGER, m_proxyNodeId);
-         success = DBExecute(hStmt);
+         DBBind(hStmt, 1, DB_SQLTYPE_INTEGER, m_id);         
+         for (int i = 0; i < m_proxyNodes->size() && success; i++)
+         {
+            DBBind(hStmt, 2, DB_SQLTYPE_INTEGER, m_proxyNodes->get(i)->getProxyNode());
+            success = DBExecute(hStmt);
+         }
          DBFreeStatement(hStmt);
       }
       else
@@ -214,7 +220,12 @@ void Zone::fillMessageInternal(NXCPMessage *msg, UINT32 userId)
 {
    super::fillMessageInternal(msg, userId);
    msg->setField(VID_ZONE_UIN, m_uin);
-   msg->setField(VID_ZONE_PROXY, m_proxyNodeId);
+   UINT32 fieldId = VID_ZONE_PROXY_BASE;
+   for (int i = 0; i < m_proxyNodes->size(); i++)
+   {
+      msg->setField(fieldId++, m_proxyNodes->get(i)->getProxyNode());
+   }
+   msg->setField(VID_ZONE_PROXY_COUNT, m_proxyNodes->size());
    m_snmpPorts.fillMessage(msg, VID_ZONE_SNMP_PORT_LIST_BASE, VID_ZONE_SNMP_PORT_COUNT);
 }
 
@@ -223,8 +234,39 @@ void Zone::fillMessageInternal(NXCPMessage *msg, UINT32 userId)
  */
 UINT32 Zone::modifyFromMessageInternal(NXCPMessage *request)
 {
-	if (request->isFieldExist(VID_ZONE_PROXY))
-		m_proxyNodeId = request->getFieldAsUInt32(VID_ZONE_PROXY);
+   if(request->isFieldExist(VID_ZONE_PROXY_COUNT))
+   {
+      UINT32 fieldId = VID_ZONE_PROXY_BASE;
+      IntegerArray<UINT32> array;
+      request->getFieldAsInt32Array(VID_ZONE_PROXY_BASE, &array);
+      for (int i = 0; i < array.size(); i++)
+      {
+         int j;
+         for (j = 0; j < m_proxyNodes->size(); j++)
+         {
+            if (m_proxyNodes->get(j)->getProxyNode() == array.get(i))
+               break;
+         }
+         if(j == m_proxyNodes->size())
+            m_proxyNodes->add(new ZoneProxy(array.get(i)));
+      }
+
+      Iterator<ZoneProxy> *it = m_proxyNodes->iterator();
+      while(it->hasNext())
+      {
+         ZoneProxy *proxy = it->next();
+
+         int j;
+         for (j = 0; j < array.size(); j++)
+         {
+            if (proxy->getProxyNode() == array.get(j))
+               break;
+         }
+         if(j == array.size())
+            it->remove();
+      }
+      delete it;
+   }
 
 	if (request->isFieldExist(VID_ZONE_SNMP_PORT_LIST_BASE) && request->isFieldExist(VID_ZONE_SNMP_PORT_COUNT))
 	{
@@ -316,6 +358,6 @@ json_t *Zone::toJson()
 {
    json_t *root = super::toJson();
    json_object_set_new(root, "uin", json_integer(m_uin));
-   json_object_set_new(root, "proxyNodeId", json_integer(m_proxyNodeId));
+   json_object_set_new(root, "proxyNodeId", json_object_array(m_proxyNodes));
    return root;
 }

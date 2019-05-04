@@ -2769,6 +2769,21 @@ public:
 };
 
 /**
+ * Zone Proxy information
+ */
+class ZoneProxy
+{
+   UINT32 m_proxyNodeId;
+   UINT32 loadAvg;
+
+public:
+   ZoneProxy(UINT32 proxyId) { m_proxyNodeId = proxyId; }
+   UINT32 getProxyNode()const { return m_proxyNodeId; }
+
+   json_t *toJson() const { json_t *root = json_object(); json_object_set_new(root, "proxyId", json_integer(m_proxyNodeId)); return root;}
+};
+
+/**
  * Zone object
  */
 class NXCORE_EXPORTABLE Zone : public NetObj
@@ -2778,7 +2793,7 @@ protected:
 
 protected:
    UINT32 m_uin;
-   UINT32 m_proxyNodeId;
+   ObjectArray<ZoneProxy> *m_proxyNodes;
 	InetAddressIndex *m_idxNodeByAddr;
 	InetAddressIndex *m_idxInterfaceByAddr;
 	InetAddressIndex *m_idxSubnetByAddr;
@@ -2805,7 +2820,7 @@ public:
    virtual json_t *toJson() override;
 
    UINT32 getUIN() const { return m_uin; }
-	UINT32 getProxyNodeId() const { return m_proxyNodeId; }
+	UINT32 getProxyNodeId() const { return m_proxyNodes->size() == 0 ? 0 : m_proxyNodes->get(0)->getProxyNode(); }
 
    void addSubnet(Subnet *pSubnet) { addChild(pSubnet); pSubnet->addParent(this); }
 
