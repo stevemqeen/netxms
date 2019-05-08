@@ -34,6 +34,7 @@
  */
 void UpdateSnmpTarget(SNMPTarget *target);
 UINT32 GetSnmpValue(const uuid& target, UINT16 port, const TCHAR *oid, TCHAR *value, int interpretRawValue);
+void UpdateProxyTargets(HashMap<ProxyKey, DataCollectionProxy> *proxyList);
 
 extern UINT32 g_dcReconciliationBlockSize;
 extern UINT32 g_dcReconciliationTimeout;
@@ -67,6 +68,7 @@ private:
    BYTE m_busy;
 	uuid m_snmpTargetGuid;
    time_t m_lastPollTime;
+   UINT32 m_proxyId;
 
 public:
    DataCollectionItem(UINT64 serverId, NXCPMessage *msg, UINT32 baseId);
@@ -84,6 +86,7 @@ public:
    int getSnmpRawValueType() const { return (int)m_snmpRawValueType; }
    UINT32 getPollingInterval() const { return (UINT32)m_pollingInterval; }
    time_t getLastPollTime() { return m_lastPollTime; }
+   UINT32 getProxyId() const { return m_proxyId; }
 
    bool equals(const DataCollectionItem *item) const { return (m_serverId == item->m_serverId) && (m_id == item->m_id); }
 
@@ -119,6 +122,7 @@ DataCollectionItem::DataCollectionItem(UINT64 serverId, NXCPMessage *msg, UINT32
    m_snmpTargetGuid = msg->getFieldAsGUID(baseId + 6);
    m_snmpPort = msg->getFieldAsUInt16(baseId + 7);
    m_snmpRawValueType = (BYTE)msg->getFieldAsUInt16(baseId + 8);
+   m_proxyId = msg->getFieldAsInt32(baseId + 9);
    m_busy = 0;
 }
 
@@ -137,6 +141,7 @@ DataCollectionItem::DataCollectionItem(DB_RESULT hResult, int row)
    m_snmpPort = DBGetFieldULong(hResult, row, 7);
    m_snmpTargetGuid = DBGetFieldGUID(hResult, row, 8);
    m_snmpRawValueType = (BYTE)DBGetFieldULong(hResult, row, 9);
+   m_proxyId = DBGetFieldULong(hResult, row, 10);
    m_busy = 0;
 }
 
@@ -155,6 +160,7 @@ DataCollectionItem::DataCollectionItem(DB_RESULT hResult, int row)
    m_snmpTargetGuid = item->m_snmpTargetGuid;
    m_snmpPort = item->m_snmpPort;
    m_snmpRawValueType = item->m_snmpRawValueType;
+   m_proxyId = item->m_proxyId;
    m_busy = 0;
  }
 
@@ -175,7 +181,8 @@ void DataCollectionItem::updateAndSave(const DataCollectionItem *item)
    // if at least one of fields changed - set all fields and save to DB
    if ((m_type != item->m_type) || (m_origin != item->m_origin) || _tcscmp(m_name, item->m_name) ||
        (m_pollingInterval != item->m_pollingInterval) || m_snmpTargetGuid.compare(item->m_snmpTargetGuid) ||
-       (m_snmpPort != item->m_snmpPort) || (m_snmpRawValueType != item->m_snmpRawValueType) || (m_lastPollTime < item->m_lastPollTime))
+       (m_snmpPort != item->m_snmpPort) || (m_snmpRawValueType != item->m_snmpRawValueType) ||
+       (m_lastPollTime < item->m_lastPollTime) || m_proxyId != item->m_proxyId)
    {
       m_type = item->m_type;
       m_origin = item->m_origin;
@@ -186,6 +193,7 @@ void DataCollectionItem::updateAndSave(const DataCollectionItem *item)
       m_snmpTargetGuid = item->m_snmpTargetGuid;
       m_snmpPort = item->m_snmpPort;
       m_snmpRawValueType = item->m_snmpRawValueType;
+      m_proxyId = item->m_proxyId;
       saveToDatabase(false);
    }
 }
@@ -204,7 +212,7 @@ void DataCollectionItem::saveToDatabase(bool newObject)
    {
 		hStmt = DBPrepare(db,
                     _T("INSERT INTO dc_config (type,origin,name,polling_interval,")
-                    _T("last_poll,snmp_port,snmp_target_guid,snmp_raw_type,server_id,dci_id)")
+                    _T("last_poll,snmp_port,snmp_target_guid,snmp_raw_type,proxy_id,server_id,dci_id)")
                     _T("VALUES (?,?,?,?,?,?,?,?,?,?)"));
    }
    else
@@ -212,7 +220,7 @@ void DataCollectionItem::saveToDatabase(bool newObject)
       hStmt = DBPrepare(db,
                     _T("UPDATE dc_config SET type=?,origin=?,name=?,")
                     _T("polling_interval=?,last_poll=?,snmp_port=?,")
-                    _T("snmp_target_guid=?,snmp_raw_type=? WHERE server_id=? AND dci_id=?"));
+                    _T("snmp_target_guid=?,snmp_raw_type=?,proxy_id=? WHERE server_id=? AND dci_id=?"));
    }
 
 	if (hStmt == NULL)
@@ -226,8 +234,9 @@ void DataCollectionItem::saveToDatabase(bool newObject)
 	DBBind(hStmt, 6, DB_SQLTYPE_INTEGER, (LONG)m_snmpPort);
    DBBind(hStmt, 7, DB_SQLTYPE_VARCHAR, m_snmpTargetGuid);
 	DBBind(hStmt, 8, DB_SQLTYPE_INTEGER, (LONG)m_snmpRawValueType);
-	DBBind(hStmt, 9, DB_SQLTYPE_BIGINT, m_serverId);
-	DBBind(hStmt, 10, DB_SQLTYPE_INTEGER, (LONG)m_id);
+   DBBind(hStmt, 9, DB_SQLTYPE_INTEGER, (LONG)m_proxyId);
+	DBBind(hStmt, 10, DB_SQLTYPE_BIGINT, m_serverId);
+	DBBind(hStmt, 11, DB_SQLTYPE_INTEGER, (LONG)m_id);
 
    DBExecute(hStmt);
    DBFreeStatement(hStmt);
@@ -1016,6 +1025,22 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
    }
    DebugPrintf(4, _T("%d SNMP targets received from server ") UINT64X_FMT(_T("016")), count, serverId);
 
+   //Read proxy list if exists
+   HashMap<ProxyKey, DataCollectionProxy> *proxyList = new HashMap<ProxyKey, DataCollectionProxy>();
+   count = msg->getFieldAsInt32(VID_PROXY_COUNT);
+   if (count > 0)
+   {
+      UINT32 fieldId = VID_PROXY_BASE;
+      for(int i = 0; i < count; i++)
+      {
+         UINT32 proxyId = msg->getFieldAsInt32(fieldId);
+         proxyList->set(GetKey(serverId, proxyId),
+               new DataCollectionProxy(serverId, proxyId, msg->getFieldAsInetAddress(fieldId + 1)));
+         fieldId += 10;
+      }
+   }
+   DebugPrintf(4, _T("%d proxy targets received from server ") UINT64X_FMT(_T("016")), count, serverId);
+
    ObjectArray<DataCollectionItem> config(32, 32, true);
 
    count = msg->getFieldAsInt32(VID_NUM_ELEMENTS);
@@ -1055,6 +1080,20 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
          }
          newItem->saveToDatabase(true);
       }
+      //Update used proxies
+      if (item->getProxyId() > 0)
+      {
+         DataCollectionProxy *proxy = proxyList->get(GetKey(serverId, item->getProxyId()));
+         if(proxy != NULL)
+         {
+            proxy->setUsed(true);
+         }
+         else
+         {
+            DebugPrintf(4, _T("No proxy found for ") UINT64X_FMT(_T("016")) _T(" server, %d item id, %d proxy id"),
+                  serverId, item->getId(), item->getProxyId());
+         }
+      }
    }
 
    // Remove not existing configuration and data for it
@@ -1090,6 +1129,7 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
       DBCommit(hdb);
 
    s_itemLock.unlock();
+   UpdateProxyTargets(proxyList);
 
    DebugPrintf(4, _T("Data collection for server ") UINT64X_FMT(_T("016")) _T(" reconfigured"), serverId);
 }

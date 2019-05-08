@@ -604,6 +604,48 @@ public:
 };
 
 /**
+ * Data collection proxy key
+ */
+typedef struct {
+   BYTE value[12];
+} ProxyKey;
+
+/**
+ * Data collection proxy key calculation function
+ */
+inline ProxyKey GetKey(UINT64 serverId, UINT32 proxyId)
+{
+   ProxyKey key;
+   memcpy(key.value, &serverId, 8);
+   memcpy(key.value + 8, &proxyId, 4);
+   return key;
+}
+
+/**
+ * Data collection proxy information
+ */
+class DataCollectionProxy
+{
+   UINT64 m_serverId; //to databse
+   UINT32 m_proxyId; //to database
+   InetAddress m_addr; //to database
+   bool m_connected; //if not connected collect data from data colleaction
+   bool m_used; // if is used
+
+public:
+   DataCollectionProxy(UINT64 serverId, UINT32 proxyId, InetAddress ipAddr);
+
+   ProxyKey getKey() const { return GetKey(m_serverId, m_proxyId); }
+   bool isConnected() const { return m_used; }
+   bool isUsed() const { return m_connected; }
+   InetAddress getAddr() const { return m_addr; }
+
+   void setConnected(bool connected) { m_connected = connected; }
+   void setUsed(bool used) { m_used = used; }
+
+};
+
+/**
  * Functions
  */
 BOOL Initialize();

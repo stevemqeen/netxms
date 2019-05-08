@@ -1176,7 +1176,7 @@ typedef struct
 #define VID_SSH_LOGIN               ((UINT32)546)
 #define VID_SSH_PASSWORD            ((UINT32)547)
 #define VID_SSH_PROXY               ((UINT32)548)
-#define VID_ZONE_PROXY_COUNT         ((UINT32)549)
+#define VID_ZONE_PROXY_COUNT        ((UINT32)549)
 #define VID_MESSAGE_LENGTH          ((UINT32)550)
 #define VID_LDAP_DN                 ((UINT32)551)
 #define VID_LDAP_ID                 ((UINT32)552)
@@ -1263,6 +1263,7 @@ typedef struct
 #define VID_RECORD_LIMIT            ((UINT32)633)
 #define VID_LOCAL_CACHE             ((UINT32)634)
 #define VID_RESTART                 ((UINT32)635)
+#define VID_PROXY_COUNT             ((UINT32)636)
 
 // Base variabe for single threshold in message
 #define VID_THRESHOLD_BASE          ((UINT32)0x00800000)
@@ -1273,6 +1274,9 @@ typedef struct
 
 // Node info list base
 #define VID_NODE_INFO_LIST_BASE     ((UINT32)0x60000000)
+
+// Proxy info list base
+#define VID_PROXY_BASE              ((UINT32)0x70000000)
 
 // Variable ranges for object's ACL
 #define VID_ACL_USER_BASE           ((UINT32)0x00001000)

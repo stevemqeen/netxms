@@ -38,6 +38,25 @@ bool g_ignoreAgentDbErrors = FALSE;
 static DB_HANDLE s_db = NULL;
 
 /**
+ * Upgrade from V7 to V8
+ */
+static BOOL H_UpgradeFromV7(int currVersion, int newVersion)
+{
+   CHK_EXEC(Query(_T("ALTER TABLE dc_config ADD proxy_id integer")));
+
+   TCHAR upgradeQueries[] =
+            _T("CREATE TABLE dc_proxy (")
+            _T("  server_id number(20) not null,")
+            _T("  proxy_id integer not null,")
+            _T("  ip_address varchar(48) not null,")
+            _T("  PRIMARY KEY(server_id,proxy_id))");
+   CHK_EXEC(Query(upgradeQueries));
+
+   CHK_EXEC(WriteMetadata(_T("SchemaVersion"), 8));
+   return TRUE;
+}
+
+/**
  * Upgrade from V6 to V7
  */
 static BOOL H_UpgradeFromV6(int currVersion, int newVersion)
@@ -340,6 +359,7 @@ static struct
    { 4, 5, H_UpgradeFromV4 },
    { 5, 6, H_UpgradeFromV5 },
    { 6, 7, H_UpgradeFromV6 },
+   { 7, 8, H_UpgradeFromV7 },
    { 0, 0, NULL }
 };
 
