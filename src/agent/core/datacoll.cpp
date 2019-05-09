@@ -34,7 +34,9 @@
  */
 void UpdateSnmpTarget(SNMPTarget *target);
 UINT32 GetSnmpValue(const uuid& target, UINT16 port, const TCHAR *oid, TCHAR *value, int interpretRawValue);
-void UpdateProxyTargets(HashMap<ProxyKey, DataCollectionProxy> *proxyList);
+void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList);
+void LoadProxyFromDatabase();
+extern HashMap<ProxyKey, DataCollectionProxy> *g_proxyList;
 
 extern UINT32 g_dcReconciliationBlockSize;
 extern UINT32 g_dcReconciliationTimeout;
@@ -947,25 +949,29 @@ static UINT32 DataCollectionSchedulerRun()
       UINT32 timeToPoll = dci->getTimeToNextPoll(now);
       if (timeToPoll == 0)
       {
-         nxlog_debug_tag(DEBUG_TAG, 7, _T("DataCollector: polling DCI %d \"%s\""), dci->getId(), dci->getName());
+         DataCollectionProxy *proxy = g_proxyList->get(GetKey(dci->getServerId(), dci->getProxyId()));
+         if((dci->getProxyId() == 0 || (proxy != NULL && !proxy->isConnected())))
+         {
+            nxlog_debug_tag(DEBUG_TAG, 7, _T("DataCollector: polling DCI %d \"%s\""), dci->getId(), dci->getName());
 
-         if (dci->getOrigin() == DS_NATIVE_AGENT)
-         {
-            dci->startDataCollection();
-            ThreadPoolExecute(s_dataCollectorPool, LocalDataCollectionCallback, dci);
-         }
-         else if (dci->getOrigin() == DS_SNMP_AGENT)
-         {
-            dci->startDataCollection();
-            TCHAR key[64];
-            ThreadPoolExecuteSerialized(s_dataCollectorPool, dci->getSnmpTargetGuid().toString(key), SnmpDataCollectionCallback, dci);
-         }
-         else
-         {
-            DebugPrintf(7, _T("DataCollector: unsupported origin %d"), dci->getOrigin());
-         }
+            if (dci->getOrigin() == DS_NATIVE_AGENT)
+            {
+               dci->startDataCollection();
+               ThreadPoolExecute(s_dataCollectorPool, LocalDataCollectionCallback, dci);
+            }
+            else if (dci->getOrigin() == DS_SNMP_AGENT)
+            {
+               dci->startDataCollection();
+               TCHAR key[64];
+               ThreadPoolExecuteSerialized(s_dataCollectorPool, dci->getSnmpTargetGuid().toString(key), SnmpDataCollectionCallback, dci);
+            }
+            else
+            {
+               DebugPrintf(7, _T("DataCollector: unsupported origin %d"), dci->getOrigin());
+            }
 
-         timeToPoll = dci->getPollingInterval();
+            timeToPoll = dci->getPollingInterval();
+         }
       }
 
       if (sleepTime > timeToPoll)
@@ -1129,7 +1135,7 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
       DBCommit(hdb);
 
    s_itemLock.unlock();
-   UpdateProxyTargets(proxyList);
+   UpdateProxyTargets(serverId, proxyList);
 
    DebugPrintf(4, _T("Data collection for server ") UINT64X_FMT(_T("016")) _T(" reconfigured"), serverId);
 }
@@ -1188,6 +1194,7 @@ static void LoadState()
       }
       DBFreeResult(hResult);
    }
+   LoadProxyFromDatabase();
 }
 
 /**

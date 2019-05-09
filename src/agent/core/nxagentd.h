@@ -634,14 +634,18 @@ class DataCollectionProxy
 
 public:
    DataCollectionProxy(UINT64 serverId, UINT32 proxyId, InetAddress ipAddr);
+   DataCollectionProxy(DataCollectionProxy *obj);
 
    ProxyKey getKey() const { return GetKey(m_serverId, m_proxyId); }
    bool isConnected() const { return m_used; }
    bool isUsed() const { return m_connected; }
-   InetAddress getAddr() const { return m_addr; }
+   const InetAddress &getAddr() const { return m_addr; }
+   UINT64 getServerId() const { return m_serverId; }
+   UINT32 getProxyId() const { return m_proxyId; }
 
    void setConnected(bool connected) { m_connected = connected; }
    void setUsed(bool used) { m_used = used; }
+   void setAddr(const InetAddress &addr) { m_addr = addr; }
 
 };
 
