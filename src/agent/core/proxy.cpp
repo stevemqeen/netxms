@@ -75,7 +75,7 @@ static void SaveProxyToDatabase(UINT64 serverId, HashMap<ProxyKey, DataCollectio
       DBRollback(hdb);
       return;
    }
-   if(it->hasNext())
+   while (it->hasNext())
    {
       DataCollectionProxy *dcp = it->next();
       DBBind(hStmt, 1, DB_SQLTYPE_BIGINT, dcp->getServerId());
@@ -176,7 +176,7 @@ void ProxyConnectionChecked(void *arg)
    g_proxyListMutex.lock();
    Iterator<DataCollectionProxy> *it = g_proxyList->iterator();
    bool reschedule = false;
-   if(it->hasNext())
+   while (it->hasNext())
    {
       DataCollectionProxy *dcProxy = it->next();
       if(dcProxy->isUsed())
@@ -205,7 +205,7 @@ void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> 
 {
    g_proxyListMutex.lock();
    Iterator<DataCollectionProxy> *it = proxyList->iterator();
-   if(it->hasNext())
+   while (it->hasNext())
    {
       DataCollectionProxy *dcpNew = it->next();
       DataCollectionProxy *dcpOld = g_proxyList->get(dcpNew->getKey());
@@ -221,7 +221,7 @@ void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> 
    delete it;
 
    it = g_proxyList->iterator();
-   if(it->hasNext())
+   while (it->hasNext())
    {
       DataCollectionProxy *dcpOld = it->next();
       if(dcpOld->getServerId() == serverId)
@@ -252,7 +252,7 @@ protected:
    virtual bool isStopConditionReached();
 
 public:
-   ProxyConnectionListener(UINT16 port) : DatagramSocketListener(port) { setName(_T("ProxyConnection")); }
+   ProxyConnectionListener(UINT16 port,  bool allowV4, bool allowV6) : DatagramSocketListener(port, allowV4, allowV6) { setName(_T("ProxyConnection")); }
 };
 
 /**
@@ -271,13 +271,48 @@ ConnectionProcessingResult ProxyConnectionListener::processConnection(SOCKET s, 
    ProxyKey tmp;
    ProxyResponseMsg response;
    SockAddrBuffer addr;
+   TCHAR buffer[64];
    socklen_t addrLen = sizeof(SockAddrBuffer);
    int bytes = recvfrom(s, &tmp, sizeof(tmp), 0, (struct sockaddr *)&addr, &addrLen);
    if (bytes > 0)
    {
-
-      //decrypt information
-      //process information
+      tmp.m_serverId = ntohq(tmp.m_serverId);
+      tmp.m_proxyId = ntohl(tmp.m_proxyId);
+      //check signature
+      g_proxyListMutex.lock();
+      if(g_proxyList->contains(tmp))
+      {
+         response.m_timestamp = htonq(static_cast<UINT64>(time(NULL)));
+         response.m_serverId = htonq(tmp.m_serverId);
+         response.m_proxyId = htonl(tmp.m_proxyId);
+         if (sendto(s, &response, sizeof(response), 0, (struct sockaddr *)&addr, addrLen) < 0)
+         {
+            nxlog_debug_tag(DEBUG_TAG, 1, _T("ProxyConnectionListener: unable send response to requester: %s"), SockaddrToStr((struct sockaddr *)&addr, buffer));
+         }
+      }
+      else
+      {
+         nxlog_debug_tag(DEBUG_TAG, 1, _T("ProxyConnectionListener: the packet drop: ip=%s, serverid=") UINT64X_FMT(_T("016")) _T(", nodeid=%d"),
+               SockaddrToStr((struct sockaddr *)&addr, buffer), tmp.m_serverId, tmp.m_proxyId);
+      }
+      g_proxyListMutex.unlock();
    }
    return CPR_COMPLETED;
+}
+
+
+
+/**
+ * Listener thread
+ */
+THREAD_RESULT THREAD_CALL ProxyListenerThread(void *arg)
+{
+   ThreadSetName("ProxyAgentsListener");
+   ProxyConnectionListener listener(LISTEN_PORT, (g_dwFlags & AF_DISABLE_IPV4), (g_dwFlags & AF_DISABLE_IPV6));
+   if (!listener.initialize())
+      return THREAD_OK;
+
+   listener.mainLoop();
+   listener.shutdown();
+   return THREAD_OK;
 }
