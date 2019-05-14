@@ -58,6 +58,7 @@
 #define COMMAND_TIMEOUT          60
 #define MAX_SUBAGENT_NAME        64
 #define MAX_INSTANCE_COLUMNS     8
+#define ZONE_PROXY_KEY_LENGTH    16
 
 /**
  * Agent policy types

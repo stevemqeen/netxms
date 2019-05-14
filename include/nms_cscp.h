@@ -1263,7 +1263,8 @@ typedef struct
 #define VID_RECORD_LIMIT            ((UINT32)633)
 #define VID_LOCAL_CACHE             ((UINT32)634)
 #define VID_RESTART                 ((UINT32)635)
-#define VID_PROXY_COUNT             ((UINT32)636)
+#define VID_THIS_PROXY_ID           ((UINT32)636)
+#define VID_ZONE_PROXY_LIST         ((UINT32)637)
 
 // Base variabe for single threshold in message
 #define VID_THRESHOLD_BASE          ((UINT32)0x00800000)
@@ -1274,9 +1275,6 @@ typedef struct
 
 // Node info list base
 #define VID_NODE_INFO_LIST_BASE     ((UINT32)0x60000000)
-
-// Proxy info list base
-#define VID_PROXY_BASE              ((UINT32)0x70000000)
 
 // Variable ranges for object's ACL
 #define VID_ACL_USER_BASE           ((UINT32)0x00001000)
@@ -1479,7 +1477,7 @@ typedef struct
 
 #define VID_CONFIG_HINT_LIST_BASE   ((UINT32)0x10000000)
 
-#define VID_ZONE_PROXY_BASE         ((UINT32)0x10000000)
+#define VID_ZONE_PROXY_BASE         ((UINT32)0x70000000)
 
 // base value for SNMP community strings
 #define VID_COMMUNITY_STRING_LIST_BASE       ((UINT32)0x10000000)

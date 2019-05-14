@@ -2773,14 +2773,25 @@ public:
  */
 class ZoneProxy
 {
-   UINT32 m_proxyNodeId;
-   UINT32 loadAvg;
+private:
+   UINT32 m_nodeId;
+   double m_loadAverage;
 
 public:
-   ZoneProxy(UINT32 proxyId) { m_proxyNodeId = proxyId; }
-   UINT32 getProxyNode()const { return m_proxyNodeId; }
+   ZoneProxy(UINT32 nodeId)
+   {
+      m_nodeId = nodeId;
+      m_loadAverage = 0;
+   }
 
-   json_t *toJson() const { json_t *root = json_object(); json_object_set_new(root, "proxyId", json_integer(m_proxyNodeId)); return root;}
+   UINT32 getNodeId() const { return m_nodeId; }
+
+   json_t *toJson() const
+   {
+      json_t *root = json_object();
+      json_object_set_new(root, "nodeId", json_integer(m_nodeId));
+      return root;
+   }
 };
 
 /**
@@ -2794,6 +2805,7 @@ protected:
 protected:
    UINT32 m_uin;
    ObjectArray<ZoneProxy> *m_proxyNodes;
+   BYTE m_proxyAuthKey[ZONE_PROXY_KEY_LENGTH];
 	InetAddressIndex *m_idxNodeByAddr;
 	InetAddressIndex *m_idxInterfaceByAddr;
 	InetAddressIndex *m_idxSubnetByAddr;
@@ -2820,11 +2832,13 @@ public:
    virtual json_t *toJson() override;
 
    UINT32 getUIN() const { return m_uin; }
-	UINT32 getProxyNodeId() const { return m_proxyNodes->size() == 0 ? 0 : m_proxyNodes->get(0)->getProxyNode(); }
+   const StringList *getSnmpPortList() const { return &m_snmpPorts; }
+
+   UINT32 getProxyNodeId() const;
+	bool isProxyNode(UINT32 nodeId) const;
+	void fillAgentConfigurationMessage(NXCPMessage *msg) const;
 
    void addSubnet(Subnet *pSubnet) { addChild(pSubnet); pSubnet->addParent(this); }
-
-   const StringList *getSnmpPortList() const { return &m_snmpPorts; }
 
 	void addToIndex(Subnet *subnet) { m_idxSubnetByAddr->put(subnet->getIpAddress(), subnet); }
    void addToIndex(Interface *iface) { m_idxInterfaceByAddr->put(iface->getIpAddressList(), iface); }
@@ -3410,6 +3424,7 @@ MobileDevice NXCORE_EXPORTABLE *FindMobileDeviceByDeviceID(const TCHAR *deviceId
 AccessPoint NXCORE_EXPORTABLE *FindAccessPointByMAC(const BYTE *macAddr);
 UINT32 NXCORE_EXPORTABLE FindLocalMgmtNode();
 Zone NXCORE_EXPORTABLE *FindZoneByUIN(UINT32 zoneUIN);
+Zone NXCORE_EXPORTABLE *FindZoneByProxyId(UINT32 proxyId);
 UINT32 FindUnusedZoneUIN();
 bool NXCORE_EXPORTABLE IsClusterIP(UINT32 zoneUIN, const InetAddress& ipAddr);
 bool NXCORE_EXPORTABLE IsParentObject(UINT32 object1, UINT32 object2);

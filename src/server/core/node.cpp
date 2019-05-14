@@ -8479,6 +8479,16 @@ void Node::syncDataCollectionWithAgent(AgentConnectionEx *conn)
    msg.setCode(CMD_DATA_COLLECTION_CONFIG);
    msg.setId(conn->generateRequestId());
 
+   if (IsZoningEnabled())
+   {
+      Zone *zone = FindZoneByProxyId(m_id);
+      if (zone != NULL)
+      {
+         msg.setField(VID_THIS_PROXY_ID, m_id);
+         zone->fillAgentConfigurationMessage(&msg);
+      }
+   }
+
    UINT32 count = 0;
    UINT32 fieldId = VID_ELEMENT_LIST_BASE;
    lockDciAccess(false);

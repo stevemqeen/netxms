@@ -1264,7 +1264,23 @@ bool NXCORE_EXPORTABLE IsClusterIP(UINT32 zoneUIN, const InetAddress& ipAddr)
  */
 Zone NXCORE_EXPORTABLE *FindZoneByUIN(UINT32 uin)
 {
-	return (Zone *)g_idxZoneByUIN.get(uin);
+	return static_cast<Zone*>(g_idxZoneByUIN.get(uin));
+}
+
+/**
+ * Comparator for FindZoneByProxyId
+ */
+static bool ZoneProxyIdComparator(NetObj *object, void *data)
+{
+   return static_cast<Zone*>(object)->isProxyNode(*static_cast<UINT32*>(data));
+}
+
+/**
+ * Find zone object by proxy node ID. Can be used to determine if given node is a proxy for any zone.
+ */
+Zone NXCORE_EXPORTABLE *FindZoneByProxyId(UINT32 proxyId)
+{
+   return static_cast<Zone*>(g_idxZoneByUIN.find(ZoneProxyIdComparator, &proxyId));
 }
 
 /**

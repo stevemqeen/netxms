@@ -36,6 +36,7 @@ Zone::Zone() : super()
    m_uin = 0;
    _tcscpy(m_name, _T("Default"));
    m_proxyNodes = new ObjectArray<ZoneProxy>(0, 16, true);
+   GenerateRandomBytes(m_proxyAuthKey, ZONE_PROXY_KEY_LENGTH);
 	m_idxNodeByAddr = new InetAddressIndex;
 	m_idxInterfaceByAddr = new InetAddressIndex;
 	m_idxSubnetByAddr = new InetAddressIndex;
@@ -50,6 +51,7 @@ Zone::Zone(UINT32 uin, const TCHAR *name) : super()
    m_uin = uin;
    _tcslcpy(m_name, name, MAX_OBJECT_NAME);
    m_proxyNodes = new ObjectArray<ZoneProxy>(0, 16, true);
+   GenerateRandomBytes(m_proxyAuthKey, ZONE_PROXY_KEY_LENGTH);
 	m_idxNodeByAddr = new InetAddressIndex;
 	m_idxInterfaceByAddr = new InetAddressIndex;
 	m_idxSubnetByAddr = new InetAddressIndex;
@@ -121,7 +123,7 @@ bool Zone::loadFromDatabase(DB_HANDLE hdb, UINT32 dwId)
          hResult = DBSelectPrepared(hStmt);
          if (hResult != NULL)
          { 
-            int count = DBGetNumRows(zoneProxyResult);
+            int count = DBGetNumRows(hResult);
             for(int i = 0; i < count; i++)
                m_proxyNodes->add(new ZoneProxy(DBGetFieldULong(hResult, i, 0)));
             DBFreeResult(hResult);
@@ -182,7 +184,7 @@ bool Zone::saveToDatabase(DB_HANDLE hdb)
          DBBind(hStmt, 1, DB_SQLTYPE_INTEGER, m_id);         
          for (int i = 0; i < m_proxyNodes->size() && success; i++)
          {
-            DBBind(hStmt, 2, DB_SQLTYPE_INTEGER, m_proxyNodes->get(i)->getProxyNode());
+            DBBind(hStmt, 2, DB_SQLTYPE_INTEGER, m_proxyNodes->get(i)->getNodeId());
             success = DBExecute(hStmt);
          }
          DBFreeStatement(hStmt);
@@ -220,13 +222,19 @@ void Zone::fillMessageInternal(NXCPMessage *msg, UINT32 userId)
 {
    super::fillMessageInternal(msg, userId);
    msg->setField(VID_ZONE_UIN, m_uin);
-   UINT32 fieldId = VID_ZONE_PROXY_BASE;
-   for (int i = 0; i < m_proxyNodes->size(); i++)
-   {
-      msg->setField(fieldId++, m_proxyNodes->get(i)->getProxyNode());
-   }
-   msg->setField(VID_ZONE_PROXY_COUNT, m_proxyNodes->size());
    m_snmpPorts.fillMessage(msg, VID_ZONE_SNMP_PORT_LIST_BASE, VID_ZONE_SNMP_PORT_COUNT);
+
+#if HAVE_ALLOCA
+   UINT32 *idList = static_cast<UINT32*>(alloca(m_proxyNodes->size() * sizeof(UINT32)));
+#else
+   UINT32 *idList = MemAllocArrayNoInit<UINT32>(m_proxyNodes->size());
+#endif
+   for (int i = 0; i < m_proxyNodes->size(); i++)
+      idList[i] = m_proxyNodes->get(i)->getNodeId();
+   msg->setFieldFromInt32Array(VID_ZONE_PROXY_LIST, m_proxyNodes->size(), idList);
+#if !HAVE_ALLOCA
+   MemFree(idList);
+#endif
 }
 
 /**
@@ -234,20 +242,19 @@ void Zone::fillMessageInternal(NXCPMessage *msg, UINT32 userId)
  */
 UINT32 Zone::modifyFromMessageInternal(NXCPMessage *request)
 {
-   if(request->isFieldExist(VID_ZONE_PROXY_COUNT))
+   if(request->isFieldExist(VID_ZONE_PROXY_LIST))
    {
-      UINT32 fieldId = VID_ZONE_PROXY_BASE;
       IntegerArray<UINT32> array;
-      request->getFieldAsInt32Array(VID_ZONE_PROXY_BASE, &array);
+      request->getFieldAsInt32Array(VID_ZONE_PROXY_LIST, &array);
       for (int i = 0; i < array.size(); i++)
       {
          int j;
-         for (j = 0; j < m_proxyNodes->size(); j++)
+         for(j = 0; j < m_proxyNodes->size(); j++)
          {
-            if (m_proxyNodes->get(j)->getProxyNode() == array.get(i))
+            if (m_proxyNodes->get(j)->getNodeId() == array.get(i))
                break;
          }
-         if(j == m_proxyNodes->size())
+         if (j == m_proxyNodes->size())
             m_proxyNodes->add(new ZoneProxy(array.get(i)));
       }
 
@@ -257,12 +264,12 @@ UINT32 Zone::modifyFromMessageInternal(NXCPMessage *request)
          ZoneProxy *proxy = it->next();
 
          int j;
-         for (j = 0; j < array.size(); j++)
+         for(j = 0; j < array.size(); j++)
          {
-            if (proxy->getProxyNode() == array.get(j))
+            if (proxy->getNodeId() == array.get(j))
                break;
          }
-         if(j == array.size())
+         if (j == array.size())
             it->remove();
       }
       delete it;
@@ -317,6 +324,61 @@ void Zone::removeFromIndex(Interface *iface)
 	      }
       }
    }
+}
+
+/**
+ * Get first proxy node (compatibility function)
+ */
+UINT32 Zone::getProxyNodeId() const
+{
+   lockProperties();
+   UINT32 id = m_proxyNodes->isEmpty() ? 0 : m_proxyNodes->get(0)->getNodeId();
+   unlockProperties();
+   return id;
+}
+
+/**
+ * Check if given node is a proxy for this zone
+ */
+bool Zone::isProxyNode(UINT32 nodeId) const
+{
+   bool result = false;
+   lockProperties();
+   for(int i = 0; i < m_proxyNodes->size(); i++)
+      if (m_proxyNodes->get(i)->getNodeId() == nodeId)
+      {
+         result = true;
+         break;
+      }
+   unlockProperties();
+   return result;
+}
+
+/**
+ * Fill configuration message for agent
+ */
+void Zone::fillAgentConfigurationMessage(NXCPMessage *msg) const
+{
+   lockProperties();
+   msg->setField(VID_ZONE_UIN, m_uin);
+   msg->setField(VID_SHARED_SECRET, m_proxyAuthKey, ZONE_PROXY_KEY_LENGTH);
+
+   UINT32 fieldId = VID_ZONE_PROXY_BASE, count = 0;
+   for(int i = 0; i < m_proxyNodes->size(); i++)
+   {
+      ZoneProxy *p = m_proxyNodes->get(i);
+      Node *node = static_cast<Node*>(FindObjectById(p->getNodeId(), OBJECT_NODE));
+      if (node != NULL)
+      {
+         msg->setField(fieldId++, p->getNodeId());
+         msg->setField(fieldId++, node->getIpAddress());
+         fieldId += 10;
+         count++;
+      }
+   }
+   msg->setField(VID_ZONE_PROXY_COUNT, count);
+
+   unlockProperties();
 }
 
 /**

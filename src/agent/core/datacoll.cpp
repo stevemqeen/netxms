@@ -1048,10 +1048,10 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
 
    //Read proxy list if exists
    HashMap<ProxyKey, DataCollectionProxy> *proxyList = new HashMap<ProxyKey, DataCollectionProxy>();
-   count = msg->getFieldAsInt32(VID_PROXY_COUNT);
+   count = msg->getFieldAsInt32(VID_ZONE_PROXY_COUNT);
    if (count > 0)
    {
-      UINT32 fieldId = VID_PROXY_BASE;
+      UINT32 fieldId = VID_ZONE_PROXY_BASE;
       for(int i = 0; i < count; i++)
       {
          UINT32 proxyId = msg->getFieldAsInt32(fieldId);
