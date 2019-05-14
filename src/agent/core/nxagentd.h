@@ -603,12 +603,34 @@ public:
    void writeSocket(const BYTE *data, size_t size);
 };
 
+#ifdef __HP_aCC
+#pragma pack 1
+#else
+#pragma pack(1)
+#endif
+
 /**
  * Data collection proxy key
  */
 typedef struct {
-   BYTE value[12];
+   UINT64 m_serverId;
+   UINT32 m_proxyId;
 } ProxyKey;
+
+/**
+ * Data collection proxy key
+ */
+typedef struct {
+   UINT64 m_timestamp;
+   UINT64 m_serverId;
+   UINT32 m_proxyId;
+} ProxyResponseMsg;
+
+#ifdef __HP_aCC
+#pragma pack
+#else
+#pragma pack()
+#endif
 
 /**
  * Data collection proxy key calculation function
@@ -616,8 +638,8 @@ typedef struct {
 inline ProxyKey GetKey(UINT64 serverId, UINT32 proxyId)
 {
    ProxyKey key;
-   memcpy(key.value, &serverId, 8);
-   memcpy(key.value + 8, &proxyId, 4);
+   key.m_serverId = serverId;
+   key.m_proxyId = proxyId;
    return key;
 }
 

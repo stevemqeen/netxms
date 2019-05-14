@@ -21,13 +21,20 @@
 **/
 
 #include "nxagentd.h"
+#include <socket_listener.h>
 
 #define DEBUG_TAG _T("proxy")
+#define REC_MSG_SIZE 16
+#define LISTEN_PORT 4700
 
-class DataCollectionProxy;
+/**
+ * Data collectors thread pool
+ */
+extern ThreadPool *g_dataCollectorPool;
 
 HashMap<ProxyKey, DataCollectionProxy> *g_proxyList = new HashMap<ProxyKey, DataCollectionProxy>();
 Mutex g_proxyListMutex;
+bool g_proxyConnectionCheckScheduled = false;
 
 DataCollectionProxy::DataCollectionProxy(UINT64 serverId, UINT32 proxyId, InetAddress ipAddr)
 {
@@ -53,7 +60,6 @@ static void SaveProxyToDatabase(UINT64 serverId, HashMap<ProxyKey, DataCollectio
    DB_HANDLE hdb = GetLocalDatabaseHandle();
    DBBegin(hdb);
 
-   g_proxyListMutex.lock();
    Iterator<DataCollectionProxy> *it = proxyList->iterator();
 
    TCHAR query[256];
@@ -83,7 +89,6 @@ static void SaveProxyToDatabase(UINT64 serverId, HashMap<ProxyKey, DataCollectio
    }
    DBFreeStatement(hStmt);
    delete it;
-   g_proxyListMutex.unlock();
    DBCommit(hdb);
 }
 
@@ -101,6 +106,96 @@ void LoadProxyFromDatabase()
       }
       DBFreeResult(hResult);
    }
+}
+
+/**
+ * Connect to given host/port
+ *
+ * @return connected socket on success or INVALID_SOCKET on error
+ */
+SOCKET ConnectToHostUDP(const InetAddress& addr, UINT16 port, UINT32 timeout) //TODO: Add IPv6?
+{
+   SOCKET s = socket(addr.getFamily(), SOCK_DGRAM, 0);
+   if (s == INVALID_SOCKET)
+      return INVALID_SOCKET;
+
+   SockAddrBuffer saBuffer;
+   struct sockaddr *sa = addr.fillSockAddr(&saBuffer, port);
+   //connect
+   int rc = connect(s, sa, SA_LEN(sa));
+   if (rc == -1)
+   {
+      closesocket(s);
+      s = INVALID_SOCKET;
+   }
+   return s;
+}
+
+static bool IsConnected(SOCKET sd, ProxyKey key) {
+   bool result = false;
+   int nRet, retryCount;
+   ProxyKey tmp;
+   tmp.m_serverId = htonq(key.m_serverId);
+   tmp.m_proxyId = htonl(key.m_proxyId);
+   ProxyResponseMsg response;
+
+   for (int retryCount = 5; retryCount > 0; retryCount--) {
+#ifdef MSG_NOSIGNAL
+      nRet = send(sd, &tmp, sizeof(tmp), MSG_NOSIGNAL);
+#else
+      nRet = send(sd, &tmp, sizeof(tmp), 0);
+#endif
+
+      if (nRet <= 0) {
+         continue;
+      }
+
+      nRet = RecvEx(sd, &response, sizeof(response), 0, 1000);
+      if (nRet <= 0) {
+         if (nRet == 0 || nRet == -1) {
+            break; // in case if socket was closed or on error just fail
+         }
+      } else {
+         tmp.m_serverId = ntohq(response.m_serverId);
+         tmp.m_proxyId = ntohl(response.m_proxyId);
+         if(g_proxyList->contains(tmp))
+         {
+            result = true;
+            break;
+         }
+      }
+   }
+   return result;
+}
+
+/**
+ * Thread checks if used in DCI proxy node is connected
+ */
+void ProxyConnectionChecked(void *arg)
+{
+   g_proxyListMutex.lock();
+   Iterator<DataCollectionProxy> *it = g_proxyList->iterator();
+   bool reschedule = false;
+   if(it->hasNext())
+   {
+      DataCollectionProxy *dcProxy = it->next();
+      if(dcProxy->isUsed())
+      {
+         reschedule = true;
+         SOCKET sd = ConnectToHostUDP(dcProxy->getAddr(), LISTEN_PORT, 5000);
+         if(sd != INVALID_SOCKET)
+         {
+            dcProxy->setConnected(IsConnected(sd, dcProxy->getKey()));
+         }
+         closesocket(sd);
+      }
+   }
+   delete it;
+   g_proxyConnectionCheckScheduled = reschedule;
+   if(reschedule)
+      ThreadPoolScheduleRelative(g_dataCollectorPool, 5000, ProxyConnectionChecked, NULL);
+
+   g_proxyListMutex.unlock();
 }
 
 /**
@@ -139,7 +234,50 @@ void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> 
       }
    }
    delete it;
+   if(!g_proxyConnectionCheckScheduled)
+      ThreadPoolScheduleRelative(g_dataCollectorPool, 0, ProxyConnectionChecked, NULL);
+
    g_proxyListMutex.unlock();
 
    SaveProxyToDatabase(serverId, proxyList);
+}
+
+/**
+ * Client listener class
+ */
+class ProxyConnectionListener : public DatagramSocketListener
+{
+protected:
+   virtual ConnectionProcessingResult processConnection(SOCKET s, const InetAddress& peer);
+   virtual bool isStopConditionReached();
+
+public:
+   ProxyConnectionListener(UINT16 port) : DatagramSocketListener(port) { setName(_T("ProxyConnection")); }
+};
+
+/**
+ * Listener stop condition
+ */
+bool ProxyConnectionListener::isStopConditionReached()
+{
+   return IsShutdownInProgress();
+}
+
+/**
+ * Process incoming message
+ */
+ConnectionProcessingResult ProxyConnectionListener::processConnection(SOCKET s, const InetAddress& peer)
+{
+   ProxyKey tmp;
+   ProxyResponseMsg response;
+   SockAddrBuffer addr;
+   socklen_t addrLen = sizeof(SockAddrBuffer);
+   int bytes = recvfrom(s, &tmp, sizeof(tmp), 0, (struct sockaddr *)&addr, &addrLen);
+   if (bytes > 0)
+   {
+
+      //decrypt information
+      //process information
+   }
+   return CPR_COMPLETED;
 }

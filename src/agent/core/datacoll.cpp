@@ -34,9 +34,12 @@
  */
 void UpdateSnmpTarget(SNMPTarget *target);
 UINT32 GetSnmpValue(const uuid& target, UINT16 port, const TCHAR *oid, TCHAR *value, int interpretRawValue);
+
 void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList);
 void LoadProxyFromDatabase();
 extern HashMap<ProxyKey, DataCollectionProxy> *g_proxyList;
+extern Mutex g_proxyListMutex;
+void ProxyConnectionChecked(void *arg);
 
 extern UINT32 g_dcReconciliationBlockSize;
 extern UINT32 g_dcReconciliationTimeout;
@@ -932,7 +935,7 @@ static void SnmpDataCollectionCallback(void *arg)
 /**
  * Data collectors thread pool
  */
-static ThreadPool *s_dataCollectorPool = NULL;
+ThreadPool *g_dataCollectorPool = NULL;
 
 /**
  * Single data collection scheduler run - schedule data collection if needed and calculate sleep time
@@ -949,21 +952,34 @@ static UINT32 DataCollectionSchedulerRun()
       UINT32 timeToPoll = dci->getTimeToNextPoll(now);
       if (timeToPoll == 0)
       {
-         DataCollectionProxy *proxy = g_proxyList->get(GetKey(dci->getServerId(), dci->getProxyId()));
-         if((dci->getProxyId() == 0 || (proxy != NULL && !proxy->isConnected())))
+         bool schedule = false;
+         if(dci->getProxyId() == 0)
+         {
+            schedule = true;
+         }
+         else
+         {
+            g_proxyListMutex.lock();
+            DataCollectionProxy *proxy = g_proxyList->get(GetKey(dci->getServerId(), dci->getProxyId()));
+            if(proxy != NULL && !proxy->isConnected())
+               schedule = true;
+            g_proxyListMutex.unlock();
+         }
+
+         if(schedule)
          {
             nxlog_debug_tag(DEBUG_TAG, 7, _T("DataCollector: polling DCI %d \"%s\""), dci->getId(), dci->getName());
 
             if (dci->getOrigin() == DS_NATIVE_AGENT)
             {
                dci->startDataCollection();
-               ThreadPoolExecute(s_dataCollectorPool, LocalDataCollectionCallback, dci);
+               ThreadPoolExecute(g_dataCollectorPool, LocalDataCollectionCallback, dci);
             }
             else if (dci->getOrigin() == DS_SNMP_AGENT)
             {
                dci->startDataCollection();
                TCHAR key[64];
-               ThreadPoolExecuteSerialized(s_dataCollectorPool, dci->getSnmpTargetGuid().toString(key), SnmpDataCollectionCallback, dci);
+               ThreadPoolExecuteSerialized(g_dataCollectorPool, dci->getSnmpTargetGuid().toString(key), SnmpDataCollectionCallback, dci);
             }
             else
             {
@@ -973,7 +989,6 @@ static UINT32 DataCollectionSchedulerRun()
             timeToPoll = dci->getPollingInterval();
          }
       }
-
       if (sleepTime > timeToPoll)
          sleepTime = timeToPoll;
    }
@@ -995,7 +1010,7 @@ static THREAD_RESULT THREAD_CALL DataCollectionScheduler(void *arg)
       DebugPrintf(7, _T("DataCollector: sleeping for %d seconds"), sleepTime);
    }
 
-   ThreadPoolDestroy(s_dataCollectorPool);
+   ThreadPoolDestroy(g_dataCollectorPool);
    DebugPrintf(1, _T("Data collection scheduler thread stopped"));
    return THREAD_OK;
 }
@@ -1262,7 +1277,7 @@ static void ClearStalledOfflineData(void *arg)
       }
    }
 
-   ThreadPoolScheduleRelative(s_dataCollectorPool, STALLED_DATA_CHECK_INTERVAL, ClearStalledOfflineData, NULL);
+   ThreadPoolScheduleRelative(g_dataCollectorPool, STALLED_DATA_CHECK_INTERVAL, ClearStalledOfflineData, NULL);
 }
 
 /**
@@ -1309,12 +1324,13 @@ void StartLocalDataCollector()
 
    LoadState();
 
-   s_dataCollectorPool = ThreadPoolCreate(_T("DATACOLL"), 1, g_dcMaxCollectorPoolSize);
+   g_dataCollectorPool = ThreadPoolCreate(_T("DATACOLL"), 1, g_dcMaxCollectorPoolSize);
    s_dataCollectionSchedulerThread = ThreadCreateEx(DataCollectionScheduler, 0, NULL);
    s_dataSenderThread = ThreadCreateEx(DataSender, 0, NULL);
    s_databaseWriterThread = ThreadCreateEx(DatabaseWriter, 0, NULL);
    s_reconciliationThread = ThreadCreateEx(ReconciliationThread, 0, NULL);
-   ThreadPoolScheduleRelative(s_dataCollectorPool, STALLED_DATA_CHECK_INTERVAL, ClearStalledOfflineData, NULL);
+   ThreadPoolScheduleRelative(g_dataCollectorPool, STALLED_DATA_CHECK_INTERVAL, ClearStalledOfflineData, NULL);
+   ThreadPoolScheduleRelative(g_dataCollectorPool, 0, ProxyConnectionChecked, NULL);
 
    s_dataCollectorStarted = true;
 }

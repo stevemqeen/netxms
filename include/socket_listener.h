@@ -42,29 +42,31 @@ enum ConnectionProcessingResult
 /**
  * Socket listener
  */
-class LIBNETXMS_EXPORTABLE SocketListener
+class LIBNETXMS_EXPORTABLE GenericSocketListener
 {
 private:
-   SOCKET m_socketV4;
-   SOCKET m_socketV6;
    UINT16 m_port;
    TCHAR *m_listenAddress;
    bool m_allowV4;
    bool m_allowV6;
+
+protected:
+   SOCKET m_socketV4;
+   SOCKET m_socketV6;
    bool m_stop;
    TCHAR m_name[MAX_LISTENER_NAME_LEN];
    UINT32 m_acceptErrors;
    UINT32 m_acceptedConnections;
    UINT32 m_rejectedConnections;
+   int m_type;
 
-protected:
    virtual bool isConnectionAllowed(const InetAddress& peer);
    virtual ConnectionProcessingResult processConnection(SOCKET s, const InetAddress& peer);
    virtual bool isStopConditionReached();
 
 public:
-   SocketListener(UINT16 port, bool allowV4 = true, bool allowV6 = true);
-   virtual ~SocketListener();
+   GenericSocketListener(UINT16 port, bool allowV4 = true, bool allowV6 = true);
+   virtual ~GenericSocketListener();
 
    void enableIPv4(bool enabled) { m_allowV4 = enabled; }
    void enableIPv6(bool enabled) { m_allowV6 = enabled; }
@@ -76,8 +78,28 @@ public:
    UINT32 getRejectedConnections() const { return m_rejectedConnections; }
 
    bool initialize();
-   void mainLoop();
+   virtual void mainLoop() = 0;
    void shutdown();
+};
+
+class LIBNETXMS_EXPORTABLE StreamSocketListener : public GenericSocketListener
+{
+private:
+   typedef GenericSocketListener super;
+
+public:
+   StreamSocketListener(UINT16 port, bool allowV4 = true, bool allowV6 = true) : super(port, allowV4, allowV6) { m_type = SOCK_STREAM; }
+   virtual void mainLoop() override;
+};
+
+class LIBNETXMS_EXPORTABLE DatagramSocketListener : public GenericSocketListener
+{
+private:
+   typedef GenericSocketListener super;
+
+public:
+   DatagramSocketListener(UINT16 port, bool allowV4 = true, bool allowV6 = true) : super(port, allowV4, allowV6) { m_type = SOCK_DGRAM; }
+   virtual void mainLoop() override;
 };
 
 #endif   /* _socket_listener_h_ */
