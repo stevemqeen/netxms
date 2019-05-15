@@ -118,7 +118,7 @@ public class NXCObjectModificationData
    public static final int SSH_PROXY              = 64;
    public static final int SSH_LOGIN              = 65;
    public static final int SSH_PASSWORD           = 66;
-   public static final int ZONE_PROXY             = 67;
+   public static final int ZONE_PROXY_LIST        = 67;
    public static final int AGENT_COMPRESSION_MODE = 68;
    public static final int URL_LIST               = 69;
    public static final int SEED_OBJECTS           = 70;
@@ -158,7 +158,7 @@ public class NXCObjectModificationData
    private String snmpPrivPassword;
    private long snmpProxy;
    private long icmpProxy;
-   private long[] trustedNodes;
+   private Long[] trustedNodes;
    private GeoLocation geolocation;
    private InetAddress primaryIpAddress;
    private MapLayoutAlgorithm mapLayout;
@@ -226,7 +226,7 @@ public class NXCObjectModificationData
    private long sshProxy;
    private String sshLogin;
    private String sshPassword;
-   private Set<Long> zoneProxies;
+   private Long[] zoneProxies;
    private List<ObjectUrl> urls;
    private List<Long> seedObjectIds;
    private MacAddress macAddress;
@@ -601,7 +601,7 @@ public class NXCObjectModificationData
    /**
     * @return the trustedNodes
     */
-   public long[] getTrustedNodes()
+   public Long[] getTrustedNodes()
    {
       return trustedNodes;
    }
@@ -609,7 +609,7 @@ public class NXCObjectModificationData
    /**
     * @param trustedNodes the trustedNodes to set
     */
-   public void setTrustedNodes(long[] trustedNodes)
+   public void setTrustedNodes(Long[] trustedNodes)
    {
       this.trustedNodes = trustedNodes;
       fieldSet.add(TRUSTED_NODES);
@@ -1772,7 +1772,7 @@ public class NXCObjectModificationData
    /**
     * @return the zoneProxies
     */
-   public Set<Long> getZoneProxies()
+   public Long[] getZoneProxies()
    {
       return zoneProxies;
    }
@@ -1780,10 +1780,10 @@ public class NXCObjectModificationData
    /**
     * @param zoneProxies the zoneProxies to set
     */
-   public void setZoneProxies(Set<Long> zoneProxies)
+   public void setZoneProxies(Long[] zoneProxies)
    {
       this.zoneProxies = zoneProxies;
-      fieldSet.add(ZONE_PROXY);
+      fieldSet.add(ZONE_PROXY_LIST);
    }
 
    /**

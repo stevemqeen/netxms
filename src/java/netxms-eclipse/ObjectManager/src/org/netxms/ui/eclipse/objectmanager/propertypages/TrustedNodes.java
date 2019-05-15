@@ -1,6 +1,6 @@
 /**
  * NetXMS - open source network management system
- * Copyright (C) 2003-2013 Victor Kirhenshtein
+ * Copyright (C) 2003-2019 Raden Solutions
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,6 @@
  */
 package org.netxms.ui.eclipse.objectmanager.propertypages;
 
-import java.util.HashMap;
-import java.util.Set;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.FillLayout;
@@ -41,10 +39,8 @@ import org.netxms.ui.eclipse.shared.ConsoleSharedData;
  */
 public class TrustedNodes extends PropertyPage
 {
-	public static final int COLUMN_NAME = 0;
-	
 	private AbstractObject object = null;
-	private ObjectList objList = null;
+	private ObjectList trustedNodes = null;
 	private boolean isModified = false;
 
 	/* (non-Javadoc)
@@ -58,16 +54,7 @@ public class TrustedNodes extends PropertyPage
 		object = (AbstractObject)getElement().getAdapter(AbstractObject.class); 
       dialogArea.setLayout(new FillLayout());   
 
-      HashMap<Long, AbstractObject> trustedNodes = new HashMap<Long, AbstractObject>(0);
-      AbstractObject[] nodes = object.getTrustedNodes();
-      for(int i = 0; i < nodes.length; i++)
-      {
-         if (nodes[i] != null)
-            trustedNodes.put(nodes[i].getObjectId(), nodes[i]);
-      }
-      
-      objList = new ObjectList(dialogArea, SWT.NONE, Messages.get().TrustedNodes_Node, trustedNodes, AbstractNode.class, new Runnable() {
-         
+      trustedNodes = new ObjectList(dialogArea, SWT.NONE, null, object.getTrustedNodes(), AbstractNode.class, new Runnable() {
          @Override
          public void run()
          {
@@ -93,12 +80,7 @@ public class TrustedNodes extends PropertyPage
 		
 		final NXCSession session = (NXCSession)ConsoleSharedData.getSession();
 		final NXCObjectModificationData md = new NXCObjectModificationData(object.getObjectId());
-		Set<Long> idList = objList.getObjects().keySet();
-		long[] nodes = new long[idList.size()];
-		int i = 0;
-		for(long id : idList)
-			nodes[i++] = id;
-		md.setTrustedNodes(nodes);
+		md.setTrustedNodes(trustedNodes.getObjectIdentifiers());
 		
 		new ConsoleJob(String.format(Messages.get().TrustedNodes_JobName, object.getObjectName()), null, Activator.PLUGIN_ID, null) {
 			@Override
@@ -155,7 +137,7 @@ public class TrustedNodes extends PropertyPage
 	@Override
 	protected void performDefaults()
 	{
-		objList.performDefaults();
+		trustedNodes.clear();
 		isModified = true;
 		super.performDefaults();
 	}

@@ -1,6 +1,6 @@
 /**
  * NetXMS - open source network management system
- * Copyright (C) 2003-2013 Victor Kirhenshtein
+ * Copyright (C) 2003-2019 Raden Solutions
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,6 @@
  */
 package org.netxms.ui.eclipse.objectmanager.propertypages;
 
-import java.util.HashMap;
-import java.util.Set;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.FillLayout;
@@ -29,7 +27,6 @@ import org.eclipse.ui.dialogs.PropertyPage;
 import org.netxms.client.NXCObjectModificationData;
 import org.netxms.client.NXCSession;
 import org.netxms.client.objects.AbstractNode;
-import org.netxms.client.objects.AbstractObject;
 import org.netxms.client.objects.Zone;
 import org.netxms.ui.eclipse.jobs.ConsoleJob;
 import org.netxms.ui.eclipse.objectbrowser.widgets.ObjectList;
@@ -43,7 +40,7 @@ import org.netxms.ui.eclipse.shared.ConsoleSharedData;
 public class ZoneCommunications extends PropertyPage
 {
 	private Zone zone;
-   private ObjectList objList = null;
+   private ObjectList proxyNodes = null;
    private boolean isModified = false;
 	
 	/* (non-Javadoc)
@@ -56,18 +53,9 @@ public class ZoneCommunications extends PropertyPage
 
 		Composite dialogArea = new Composite(parent, SWT.NONE);		
       dialogArea.setLayout(new FillLayout());   
-		
 
-      HashMap<Long, AbstractObject> proxyNodes = new HashMap<Long, AbstractObject>(0);
-      AbstractObject[] nodes = zone.getProxyNodes();
-      for(int i = 0; i < nodes.length; i++)
-      {
-         if (nodes[i] != null)
-            proxyNodes.put(nodes[i].getObjectId(), nodes[i]);
-      }
-
-      objList = new ObjectList(dialogArea, SWT.NONE, Messages.get().TrustedNodes_Node, proxyNodes, AbstractNode.class, new Runnable() {
-         
+      proxyNodes = new ObjectList(dialogArea, SWT.NONE, Messages.get().ZoneCommunications_ProxyNodes, 
+            zone.getProxyNodes(), AbstractNode.class, new Runnable() {
          @Override
          public void run()
          {
@@ -92,8 +80,7 @@ public class ZoneCommunications extends PropertyPage
 			setValid(false);
 		
 		final NXCObjectModificationData md = new NXCObjectModificationData(zone.getObjectId());
-		Set<Long> idList = objList.getObjects().keySet();
-      md.setZoneProxies(idList);
+      md.setZoneProxies(proxyNodes.getObjectIdentifiers());
 		
 		final NXCSession session = (NXCSession)ConsoleSharedData.getSession();
 		new ConsoleJob(String.format(Messages.get().ZoneCommunications_JobName, zone.getObjectName()), null, Activator.PLUGIN_ID, null) {
@@ -153,6 +140,6 @@ public class ZoneCommunications extends PropertyPage
 	{
 		super.performDefaults();
       isModified = true;
-		objList.performDefaults();
+		proxyNodes.clear();
 	}
 }

@@ -708,22 +708,13 @@ public abstract class AbstractObject
    }
 
 	/**
+	 * Get list of trusted nodes
+	 * 
 	 * @return List of trusted nodes
 	 */
-	public AbstractObject[] getTrustedNodes()
+	public List<AbstractObject> getTrustedNodes()
 	{
-      final AbstractObject[] list = new AbstractObject[trustedNodes.size()];
-		final Iterator<Long> it = trustedNodes.iterator();
-		for(int i = 0; it.hasNext(); i++)
-		{
-		   long id = it.next();
-			AbstractObject o = session.findObjectById(id);
-			if (o != null)
-			   list[i] = o;
-			else
-			   list[i] = new UnknownObject(id, session);
-		}
-      return list;
+	   return session.findMultipleObjects(trustedNodes.toArray(new Long[trustedNodes.size()]), true);
 	}
 
    /**
@@ -734,16 +725,7 @@ public abstract class AbstractObject
     */
    public List<AbstractObject> getDashboards(boolean accessibleOnly)
    {
-      final List<AbstractObject> list = new ArrayList<AbstractObject>();
-      for(Long id : dashboards)
-      {
-         AbstractObject o = session.findObjectById(id);
-         if (o != null)
-            list.add(o);
-         else if (!accessibleOnly)
-            list.add(new UnknownObject(id, session));
-      }
-      return list;
+      return session.findMultipleObjects(dashboards.toArray(new Long[dashboards.size()]), true);
    }
 
 	/**

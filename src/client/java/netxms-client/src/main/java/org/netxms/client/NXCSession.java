@@ -5177,7 +5177,7 @@ public class NXCSession
 
       if (data.isFieldSet(NXCObjectModificationData.TRUSTED_NODES))
       {
-         final long[] nodes = data.getTrustedNodes();
+         final Long[] nodes = data.getTrustedNodes();
          msg.setFieldInt32(NXCPCodes.VID_NUM_TRUSTED_NODES, nodes.length);
          msg.setField(NXCPCodes.VID_TRUSTED_NODES, nodes);
       }
@@ -5555,11 +5555,9 @@ public class NXCSession
          msg.setField(NXCPCodes.VID_SSH_PASSWORD, data.getSshPassword());
       }
 
-      if (data.isFieldSet(NXCObjectModificationData.ZONE_PROXY))
+      if (data.isFieldSet(NXCObjectModificationData.ZONE_PROXY_LIST))
       {
-         msg.setFieldInt32(NXCPCodes.VID_ZONE_PROXY_COUNT, data.getZoneProxies().size());
-         final Long[] nodes = data.getZoneProxies().toArray(new Long[data.getZoneProxies().size()]);
-         msg.setField(NXCPCodes.VID_ZONE_PROXY_BASE, nodes);
+         msg.setField(NXCPCodes.VID_ZONE_PROXY_LIST, data.getZoneProxies());
       }
 
       if (data.isFieldSet(NXCObjectModificationData.SEED_OBJECTS))

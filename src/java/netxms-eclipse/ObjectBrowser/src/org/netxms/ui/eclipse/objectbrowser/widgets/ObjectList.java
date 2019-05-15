@@ -1,10 +1,31 @@
+/**
+ * NetXMS - open source network management system
+ * Copyright (C) 2003-2019 Raden Solutions
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
 package org.netxms.ui.eclipse.objectbrowser.widgets;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.List;
 import org.eclipse.jface.viewers.ArrayContentProvider;
 import org.eclipse.jface.viewers.ILabelProvider;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.TableViewer;
 import org.eclipse.jface.window.Window;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionEvent;
@@ -15,48 +36,72 @@ import org.eclipse.swt.layout.RowData;
 import org.eclipse.swt.layout.RowLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.model.WorkbenchLabelProvider;
 import org.netxms.client.objects.AbstractObject;
 import org.netxms.ui.eclipse.objectbrowser.Messages;
 import org.netxms.ui.eclipse.objectbrowser.dialogs.ObjectSelectionDialog;
 import org.netxms.ui.eclipse.tools.ObjectLabelComparator;
 import org.netxms.ui.eclipse.tools.WidgetHelper;
-import org.netxms.ui.eclipse.widgets.SortableTableViewer;
 
+/**
+ * Object list widget
+ */
 public class ObjectList extends Composite
 {      
-   private SortableTableViewer viewer;
-   private HashMap<Long, AbstractObject> nodeMap;
+   private TableViewer viewer;
+   private HashMap<Long, AbstractObject> objects;
    private Button addButton;
    private Button deleteButton;
 
-   public ObjectList(Composite parent, int style, String columnName, HashMap<Long, AbstractObject> objects, final Class<? extends AbstractObject> classFilter, final Runnable callback)
+   /**
+    * Create new object list widget
+    *  
+    * @param parent parent composite
+    * @param style object list holding composite style
+    * @param title List title (if set to null, no title will be displayed)
+    * @param initialContent initial object list (can be null)
+    * @param classFilter class filter for object selection dialog (can be null)
+    * @param modifyListener modify listener (can be null)
+    */
+   public ObjectList(Composite parent, int style, String title, Collection<AbstractObject> initialContent,
+         final Class<? extends AbstractObject> classFilter, final Runnable modifyListener)
    {
       super(parent, style);
-      nodeMap = objects;
+
+      objects = new HashMap<Long, AbstractObject>();
+      if (initialContent != null)
+      {
+         for(AbstractObject o : initialContent)
+            objects.put(o.getObjectId(), o);
+      }
       
       GridLayout layout = new GridLayout();
-      layout.verticalSpacing = WidgetHelper.OUTER_SPACING;
+      layout.verticalSpacing = WidgetHelper.INNER_SPACING;
       layout.marginWidth = 0;
       layout.marginHeight = 0;
       setLayout(layout);
       
-      final String[] columnNames = { columnName };
-      final int[] columnWidths = { 300 };
-      viewer = new SortableTableViewer(this, columnNames, columnWidths, 0, SWT.UP,
-                                       SWT.BORDER | SWT.MULTI | SWT.FULL_SELECTION);
+      if (title != null)
+      {
+         Label titleLabel = new Label(this, SWT.NONE);
+         titleLabel.setText(title);
+      }
+      
+      viewer = new TableViewer(this, SWT.BORDER | SWT.MULTI | SWT.FULL_SELECTION);
+      viewer.getTable().setSortDirection(SWT.UP);
       viewer.setContentProvider(new ArrayContentProvider());
       viewer.setLabelProvider(new WorkbenchLabelProvider());
       viewer.setComparator(new ObjectLabelComparator((ILabelProvider)viewer.getLabelProvider()));
       viewer.setInput(objects.values().toArray());
       
-      GridData gridData = new GridData();
-      gridData.verticalAlignment = GridData.FILL;
-      gridData.grabExcessVerticalSpace = true;
-      gridData.horizontalAlignment = GridData.FILL;
-      gridData.grabExcessHorizontalSpace = true;
-      gridData.heightHint = 0;
-      viewer.getControl().setLayoutData(gridData);
+      GridData gd = new GridData();
+      gd.verticalAlignment = GridData.FILL;
+      gd.grabExcessVerticalSpace = true;
+      gd.horizontalAlignment = GridData.FILL;
+      gd.grabExcessHorizontalSpace = true;
+      gd.heightHint = 0;
+      viewer.getControl().setLayoutData(gd);
       
       Composite buttons = new Composite(this, SWT.NONE);
       RowLayout buttonLayout = new RowLayout();
@@ -64,9 +109,10 @@ public class ObjectList extends Composite
       buttonLayout.pack = false;
       buttonLayout.marginWidth = 0;
       buttons.setLayout(buttonLayout);
-      gridData = new GridData();
-      gridData.horizontalAlignment = SWT.RIGHT;
-      buttons.setLayoutData(gridData);
+      gd = new GridData();
+      gd.verticalIndent = WidgetHelper.OUTER_SPACING - WidgetHelper.INNER_SPACING;
+      gd.horizontalAlignment = SWT.RIGHT;
+      buttons.setLayoutData(gd);
 
       addButton = new Button(buttons, SWT.PUSH);
       addButton.setText(Messages.get().ObjectList_Add);
@@ -83,12 +129,11 @@ public class ObjectList extends Composite
             ObjectSelectionDialog dlg = new ObjectSelectionDialog(getShell(), null, ObjectSelectionDialog.createNodeSelectionFilter(true));
             if (dlg.open() == Window.OK)
             {
-               AbstractObject[] nodes = dlg.getSelectedObjects(classFilter);
-               for(int i = 0; i < nodes.length; i++)
-                  nodeMap.put(nodes[i].getObjectId(), nodes[i]);
-               viewer.setInput(nodeMap.values().toArray());
-               if (callback != null)
-                  callback.run();
+               for (AbstractObject o :dlg.getSelectedObjects(classFilter))
+                  objects.put(o.getObjectId(), o);
+               viewer.setInput(objects.values().toArray());
+               if (modifyListener != null)
+                  modifyListener.run();
             }
          }
       });
@@ -105,23 +150,15 @@ public class ObjectList extends Composite
             widgetSelected(e);
          }
 
-         @SuppressWarnings("unchecked")
          @Override
          public void widgetSelected(SelectionEvent e)
          {
             IStructuredSelection selection = (IStructuredSelection)viewer.getSelection();
-            Iterator<AbstractObject> it = selection.iterator();
-            if (it.hasNext())
-            {
-               while(it.hasNext())
-               {
-                  AbstractObject object = it.next();
-                  nodeMap.remove(object.getObjectId());
-               }
-               viewer.setInput(nodeMap.values().toArray());
-               if (callback != null)
-                  callback.run();
-            }
+            for(Object o : selection.toList())
+               objects.remove(((AbstractObject)o).getObjectId());
+            viewer.setInput(objects.values().toArray());
+            if (modifyListener != null)
+               modifyListener.run();
          }
       });
       rd = new RowData();
@@ -129,15 +166,32 @@ public class ObjectList extends Composite
       deleteButton.setLayoutData(rd);      
    }
    
-   public void performDefaults()
+   /**
+    * Clear list
+    */
+   public void clear()
    {
-      nodeMap.clear();
+      objects.clear();
       viewer.setInput(new AbstractObject[0]);
-      
+   }
+   
+   /**
+    * Get selected object identifiers
+    * 
+    * @return selected object identifiers
+    */
+   public Long[] getObjectIdentifiers()
+   {
+      return objects.keySet().toArray(new Long[objects.size()]);
    }
 
-   public HashMap<Long, AbstractObject> getObjects()
+   /**
+    * Get selected objects
+    * 
+    * @return selected objects
+    */
+   public List<AbstractObject> getObjects()
    {
-      return nodeMap;
+      return new ArrayList<AbstractObject>(objects.values());
    }
 }
