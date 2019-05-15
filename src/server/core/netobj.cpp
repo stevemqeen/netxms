@@ -86,6 +86,7 @@ NetObj::NetObj()
    m_postalAddress = new PostalAddress();
    m_dashboards = new IntegerArray<UINT32>();
    m_urls = new ObjectArray<ObjectUrl>(4, 4, true);
+   m_assignedZoneProxyId = 0;
    m_state = 0;
    m_stateBeforeMaintenance = 0;
    m_runtimeFlags = 0;

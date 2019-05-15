@@ -662,6 +662,7 @@ protected:
 	UINT32 m_submapId;				// Map object which should be open on drill-down request
 	IntegerArray<UINT32> *m_dashboards; // Dashboards associated with this object
 	ObjectArray<ObjectUrl> *m_urls;  // URLs associated with this object
+	UINT32 m_assignedZoneProxyId;    // ID of assigned zone proxy node
 
    ObjectArray<NetObj> *m_childList;     // Array of pointers to child objects
    ObjectArray<NetObj> *m_parentList;    // Array of pointers to parent objects
@@ -834,6 +835,9 @@ public:
    void setCustomAttribute(const TCHAR *name, const TCHAR *value);
    void setCustomAttributePV(const TCHAR *name, TCHAR *value);
    void deleteCustomAttribute(const TCHAR *name);
+
+   UINT32 getAssignedZoneProxyId() const { return m_assignedZoneProxyId; }
+   void setAssignedZoneProxyId(UINT32 id) { m_assignedZoneProxyId = id; }
 
    virtual NXSL_Value *createNXSLObject(NXSL_VM *vm);
 
@@ -2401,6 +2405,12 @@ public:
    DataCollectionError getItemFromSMCLP(const TCHAR *param, TCHAR *buffer, size_t size);
    DataCollectionError getItemFromDeviceDriver(const TCHAR *param, TCHAR *buffer, size_t size);
 
+   double getMetricFromAgentAsDouble(const TCHAR *name, double defaultValue = 0);
+   INT32 getMetricFromAgentAsInt32(const TCHAR *name, INT32 defaultValue = 0);
+   UINT32 getMetricFromAgentAsUInt32(const TCHAR *name, UINT32 defaultValue = 0);
+   INT64 getMetricFromAgentAsInt64(const TCHAR *name, INT64 defaultValue = 0);
+   UINT64 getMetricFromAgentAsUInt64(const TCHAR *name, UINT64 defaultValue = 0);
+
    UINT32 getItemForClient(int iOrigin, UINT32 userId, const TCHAR *pszParam, TCHAR *pszBuffer, UINT32 dwBufSize);
    UINT32 getTableForClient(const TCHAR *name, Table **table);
 
@@ -2417,15 +2427,13 @@ public:
    AgentConnectionEx *createAgentConnection(bool sendServerId = false);
    AgentConnectionEx *getAgentConnection(bool forcePrimary = false);
    AgentConnectionEx *acquireProxyConnection(ProxyType type, bool validate = false);
-   AgentConnectionEx *getConnectionToZoneNodeProxy(bool validate = false);
 	SNMP_Transport *createSnmpTransport(WORD port = 0, const TCHAR *context = NULL);
 	SNMP_SecurityContext *getSnmpSecurityContext() const;
 
-	UINT32 getEffectiveSnmpProxy() const;
-   UINT32 getEffectiveSshProxy() const;
-   UINT32 getEffectiveIcmpProxy() const;
-   UINT32 getEffectiveAgentProxy() const;
-   UINT32 getEffectiveZoneProxy() const;
+	UINT32 getEffectiveSnmpProxy();
+   UINT32 getEffectiveSshProxy();
+   UINT32 getEffectiveIcmpProxy();
+   UINT32 getEffectiveAgentProxy();
 
    void writeParamListToMessage(NXCPMessage *pMsg, int origin, WORD flags);
 	void writeWinPerfObjectsToMessage(NXCPMessage *msg);
@@ -2769,27 +2777,27 @@ public:
 };
 
 /**
- * Zone Proxy information
+ * Zone proxy information
  */
-class ZoneProxy
+struct ZoneProxy
 {
-private:
-   UINT32 m_nodeId;
-   double m_loadAverage;
+   UINT32 nodeId;
+   bool isAvailable;     // True if proxy is available
+   UINT32 assignments;   // Number of objects where this proxy is assigned
+   double loadAverage;
 
-public:
-   ZoneProxy(UINT32 nodeId)
+   ZoneProxy(UINT32 _nodeId)
    {
-      m_nodeId = nodeId;
-      m_loadAverage = 0;
+      nodeId = _nodeId;
+      isAvailable = false;
+      assignments = 0;
+      loadAverage = 0;
    }
-
-   UINT32 getNodeId() const { return m_nodeId; }
 
    json_t *toJson() const
    {
       json_t *root = json_object();
-      json_object_set_new(root, "nodeId", json_integer(m_nodeId));
+      json_object_set_new(root, "nodeId", json_integer(nodeId));
       return root;
    }
 };
@@ -2834,9 +2842,14 @@ public:
    UINT32 getUIN() const { return m_uin; }
    const StringList *getSnmpPortList() const { return &m_snmpPorts; }
 
-   UINT32 getProxyNodeId() const;
+   UINT32 getProxyNodeId(NetObj *object);
 	bool isProxyNode(UINT32 nodeId) const;
+	IntegerArray<UINT32> *getAllProxyNodes() const;
 	void fillAgentConfigurationMessage(NXCPMessage *msg) const;
+
+   AgentConnectionEx *acquireConnectionToProxy(bool validate = false);
+
+   void updateProxyStatus(Node *node);
 
    void addSubnet(Subnet *pSubnet) { addChild(pSubnet); pSubnet->addParent(this); }
 
