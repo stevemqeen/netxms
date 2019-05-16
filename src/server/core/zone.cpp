@@ -332,18 +332,18 @@ void Zone::removeFromIndex(Interface *iface)
  * Get proxy node for given object. Always prefers proxy that is already assigned to the object
  * and will update assigned proxy property if changed.
  */
-UINT32 Zone::getProxyNodeId(NetObj *object)
+UINT32 Zone::getProxyNodeId(NetObj *object, bool backup)
 {
    lockProperties();
 
    ZoneProxy *proxy = NULL;
 
-   if ((object != NULL) && (object->getAssignedZoneProxyId() != 0))
+   if ((object != NULL) && (object->getAssignedZoneProxyId(backup) != 0))
    {
       for(int i = 0; i < m_proxyNodes->size(); i++)
       {
          ZoneProxy *p = m_proxyNodes->get(i);
-         if (p->nodeId == object->getAssignedZoneProxyId())
+         if (p->nodeId == object->getAssignedZoneProxyId(backup))
          {
             if (p->isAvailable)
             {
@@ -360,32 +360,46 @@ UINT32 Zone::getProxyNodeId(NetObj *object)
 
    if (proxy == NULL)
    {
-      if (!m_proxyNodes->isEmpty())
+      if (m_proxyNodes->size() > (backup ? 1 : 0))
       {
-         proxy = m_proxyNodes->get(0);
+         if (!backup)
+            proxy = m_proxyNodes->get(0);
          for(int i = 0; i < m_proxyNodes->size(); i++)
          {
             ZoneProxy *p = m_proxyNodes->get(i);
             if (!p->isAvailable)
                continue;
 
-            if ((p->loadAverage < proxy->loadAverage) || !proxy->isAvailable)
+            if (p->nodeId == object->getAssignedZoneProxyId(!backup))
+               continue;
+
+            if ((proxy == NULL) || (p->loadAverage < proxy->loadAverage) || !proxy->isAvailable)
                proxy = p;
          }
       }
       if (object != NULL)
       {
-         object->setAssignedZoneProxyId((proxy != NULL) ? proxy->nodeId : 0);
+         object->setAssignedZoneProxyId((proxy != NULL) ? proxy->nodeId : 0, backup);
+         if (proxy != NULL)
+         {
+            object->setAssignedZoneProxyId(proxy->nodeId, backup);
+            proxy->assignments++;
+         }
+         else
+         {
+            object->setAssignedZoneProxyId(0, backup);
+         }
       }
    }
 
    UINT32 id = (proxy != NULL) ? proxy->nodeId : 0;
-   nxlog_debug_tag(DEBUG_TAG_ZONE_PROXY, 8, _T("Zone::getProxyNodeId: selected proxy [%u] for object %s [%u] in zone %s [uin=%u]"),
+   nxlog_debug_tag(DEBUG_TAG_ZONE_PROXY, 8, _T("Zone::getProxyNodeId: selected %s proxy [%u] for object %s [%u] in zone %s [uin=%u]"),
+            backup ? _T("backup") : _T("primary"),
             id, (object != NULL) ? object->getName() : _T("(null)"), (object != NULL) ? object->getId() : 0,
             m_name, m_uin);
 
    unlockProperties();
-   return object->getAssignedZoneProxyId();
+   return id;
 }
 
 /**
@@ -462,9 +476,10 @@ AgentConnectionEx *Zone::acquireConnectionToProxy(bool validate)
 }
 
 /**
- * Update proxy status
+ * Update proxy status. Passive mode should be used when actual communication with the proxy
+ * should be avoided (for example during server startup).
  */
-void Zone::updateProxyStatus(Node *node)
+void Zone::updateProxyStatus(Node *node, bool activeMode)
 {
    lockProperties();
    for(int i = 0; i < m_proxyNodes->size(); i++)
@@ -483,7 +498,7 @@ void Zone::updateProxyStatus(Node *node)
                      m_name, m_uin, node->getName(), node->getId(), isAvailable ? _T("YES") : _T("NO"));
             p->isAvailable = isAvailable;
          }
-         if (isAvailable)
+         if (isAvailable && activeMode)
          {
             p->loadAverage = node->getMetricFromAgentAsDouble(_T("System.CPU.LoadAvg15"), p->loadAverage);
          }

@@ -2205,7 +2205,7 @@ restart_agent_check:
       Zone *zone = FindZoneByProxyId(m_id);
       if (zone != NULL)
       {
-         zone->updateProxyStatus(this);
+         zone->updateProxyStatus(this, true);
       }
    }
 
@@ -6934,16 +6934,16 @@ Cluster *Node::getMyCluster()
 /**
  * Get effective SNMP proxy for this node
  */
-UINT32 Node::getEffectiveSnmpProxy()
+UINT32 Node::getEffectiveSnmpProxy(bool backup)
 {
-   UINT32 snmpProxy = m_snmpProxy;
+   UINT32 snmpProxy = backup ? 0 : m_snmpProxy;
    if (IsZoningEnabled() && (snmpProxy == 0) && (m_zoneUIN != 0))
    {
       // Use zone default proxy if set
       Zone *zone = FindZoneByUIN(m_zoneUIN);
       if ((zone != NULL) && !zone->isProxyNode(m_id))
       {
-         snmpProxy = zone->getProxyNodeId(this);
+         snmpProxy = zone->getProxyNodeId(this, backup);
       }
    }
    return snmpProxy;
@@ -8743,7 +8743,9 @@ void Node::incSnmpTrapCount()
  */
 void Node::collectProxyInfo(ProxyInfo *info)
 {
-   bool snmpProxy = (getEffectiveSnmpProxy() == info->proxyId);
+   UINT32 primarySnmpProxy = getEffectiveSnmpProxy(false);
+   bool snmpProxy = (primarySnmpProxy == info->proxyId);
+   bool backupSnmpProxy = (getEffectiveSnmpProxy(true) == info->proxyId);
    bool isTarget = false;
 
    lockDciAccess(false);
@@ -8753,11 +8755,11 @@ void Node::collectProxyInfo(ProxyInfo *info)
       if (dco->getStatus() == ITEM_STATUS_DISABLED)
          continue;
 
-      if (((snmpProxy && (dco->getDataSource() == DS_SNMP_AGENT) && (dco->getSourceNode() == 0)) ||
+      if ((((snmpProxy || backupSnmpProxy) && (dco->getDataSource() == DS_SNMP_AGENT) && (dco->getSourceNode() == 0)) ||
            ((dco->getDataSource() == DS_NATIVE_AGENT) && (dco->getSourceNode() == info->proxyId))) &&
           dco->hasValue() && (dco->getAgentCacheMode() == AGENT_CACHE_ON))
       {
-         addProxyDataCollectionElement(info, dco);
+         addProxyDataCollectionElement(info, dco, backupSnmpProxy && (dco->getDataSource() == DS_SNMP_AGENT) ? primarySnmpProxy : 0);
          if (dco->getDataSource() == DS_SNMP_AGENT)
             isTarget = true;
       }

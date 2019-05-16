@@ -1670,6 +1670,14 @@ BOOL LoadObjects()
          if (node->loadFromDatabase(hdb, id))
          {
             NetObjInsert(node, false, false);  // Insert into indexes
+            if (IsZoningEnabled())
+            {
+               Zone *zone = FindZoneByProxyId(id);
+               if (zone != NULL)
+               {
+                  zone->updateProxyStatus(node, false);
+               }
+            }
          }
          else     // Object load failed
          {
@@ -2125,6 +2133,18 @@ struct __dump_objects_data
 };
 
 /**
+ * Print object information
+ */
+static void PrintObjectInfo(ServerConsole *console, UINT32 objectId, const TCHAR *prefix)
+{
+   if (objectId == 0)
+      return;
+
+   NetObj *object = FindObjectById(objectId);
+   ConsolePrintf(console, _T("%s %s [%u]\n"), prefix, (object != NULL) ? object->getName() : _T("<unknown>"), objectId);
+}
+
+/**
  * Enumeration callback for DumpObjects
  */
 static void DumpObjectCallback(NetObj *object, void *data)
@@ -2135,14 +2155,14 @@ static void DumpObjectCallback(NetObj *object, void *data)
    if ((dd->filter != NULL) && !MatchString(dd->filter, object->getName(), false))
       return;
 
-	CONSOLE_CTX pCtx = dd->console;
+	CONSOLE_CTX console = dd->console;
 
-	ConsolePrintf(pCtx, _T("\x1b[1mObject ID %d \"%s\"\x1b[0m\n")
-                       _T("   Class: %s  Status: %s  IsModified: %d  IsDeleted: %d  RefCount: %d\n"),
+	ConsolePrintf(console, _T("\x1b[1mObject ID %d \"%s\"\x1b[0m\n")
+                       _T("   Class=%s  Status=%s  IsModified=%d  IsDeleted=%d  RefCount=%d\n"),
 					  object->getId(), object->getName(), object->getObjectClassName(),
                  GetStatusAsText(object->getStatus(), true),
                  object->isModified(), object->isDeleted(), object->getRefCount());
-   ConsolePrintf(pCtx, _T("   Parents: <%s>\n   Children: <%s>\n"),
+   ConsolePrintf(console, _T("   Parents: <%s>\n   Children: <%s>\n"),
                  object->dbgGetParentList(dd->buffer), object->dbgGetChildList(&dd->buffer[4096]));
 	time_t t = object->getTimeStamp();
 #if HAVE_LOCALTIME_R
@@ -2152,36 +2172,38 @@ static void DumpObjectCallback(NetObj *object, void *data)
 	struct tm *ltm = localtime(&t);
 #endif
 	_tcsftime(dd->buffer, 256, _T("%d.%b.%Y %H:%M:%S"), ltm);
-   ConsolePrintf(pCtx, _T("   Last change: %s\n"), dd->buffer);
+   ConsolePrintf(console, _T("   Last change.........: %s\n"), dd->buffer);
    if (object->isDataCollectionTarget())
-      ConsolePrintf(pCtx, _T("   State flags: 0x%08x\n"), ((DataCollectionTarget *)object)->getState());
+      ConsolePrintf(console, _T("   State flags.........: 0x%08x\n"), ((DataCollectionTarget *)object)->getState());
    switch(object->getObjectClass())
    {
       case OBJECT_NODE:
-         ConsolePrintf(pCtx, _T("   Primary IP: %s\n   Primary hostname: %s\n   IsSNMP: %d IsAgent: %d IsLocal: %d OID: %s\n"),
+         ConsolePrintf(console, _T("   Primary IP..........: %s\n   Primary hostname....: %s\n   Capabilities........: isSNMP=%d isAgent=%d isLocalMgmt=%d\n   SNMP ObjectId.......: %s\n"),
                        ((Node *)object)->getIpAddress().toString(dd->buffer),
                        ((Node *)object)->getPrimaryName(),
                        ((Node *)object)->isSNMPSupported(),
                        ((Node *)object)->isNativeAgent(),
                        ((Node *)object)->isLocalManagement(),
                        ((Node *)object)->getSNMPObjectId());
+         PrintObjectInfo(console, object->getAssignedZoneProxyId(false), _T("   Primary zone proxy..:"));
+         PrintObjectInfo(console, object->getAssignedZoneProxyId(true), _T("   Backup zone proxy...:"));
          break;
       case OBJECT_SUBNET:
-         ConsolePrintf(pCtx, _T("   IP address: %s/%d\n"), ((Subnet *)object)->getIpAddress().toString(dd->buffer), ((Subnet *)object)->getIpAddress().getMaskBits());
+         ConsolePrintf(console, _T("   IP address..........: %s/%d\n"), ((Subnet *)object)->getIpAddress().toString(dd->buffer), ((Subnet *)object)->getIpAddress().getMaskBits());
          break;
       case OBJECT_ACCESSPOINT:
-         ConsolePrintf(pCtx, _T("   IP address: %s\n"), ((AccessPoint *)object)->getIpAddress().toString(dd->buffer));
+         ConsolePrintf(console, _T("   IP address..........: %s\n"), ((AccessPoint *)object)->getIpAddress().toString(dd->buffer));
          break;
       case OBJECT_INTERFACE:
-         ConsolePrintf(pCtx, _T("   MAC address: %s\n"), MACToStr(((Interface *)object)->getMacAddr(), dd->buffer));
+         ConsolePrintf(console, _T("   MAC address.........: %s\n"), MACToStr(((Interface *)object)->getMacAddr(), dd->buffer));
          for(int n = 0; n < ((Interface *)object)->getIpAddressList()->size(); n++)
          {
             const InetAddress& a = ((Interface *)object)->getIpAddressList()->get(n);
-            ConsolePrintf(pCtx, _T("   IP address: %s/%d\n"), a.toString(dd->buffer), a.getMaskBits());
+            ConsolePrintf(console, _T("   IP address..........: %s/%d\n"), a.toString(dd->buffer), a.getMaskBits());
          }
          break;
       case OBJECT_TEMPLATE:
-         ConsolePrintf(pCtx, _T("   Version: %d\n"),
+         ConsolePrintf(console, _T("   Version.............: %d\n"),
                        ((Template *)(object))->getVersion());
          break;
    }

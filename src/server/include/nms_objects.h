@@ -662,7 +662,8 @@ protected:
 	UINT32 m_submapId;				// Map object which should be open on drill-down request
 	IntegerArray<UINT32> *m_dashboards; // Dashboards associated with this object
 	ObjectArray<ObjectUrl> *m_urls;  // URLs associated with this object
-	UINT32 m_assignedZoneProxyId;    // ID of assigned zone proxy node
+	UINT32 m_primaryZoneProxyId;     // ID of assigned primary zone proxy node
+   UINT32 m_backupZoneProxyId;      // ID of assigned backup zone proxy node
 
    ObjectArray<NetObj> *m_childList;     // Array of pointers to child objects
    ObjectArray<NetObj> *m_parentList;    // Array of pointers to parent objects
@@ -836,8 +837,8 @@ public:
    void setCustomAttributePV(const TCHAR *name, TCHAR *value);
    void deleteCustomAttribute(const TCHAR *name);
 
-   UINT32 getAssignedZoneProxyId() const { return m_assignedZoneProxyId; }
-   void setAssignedZoneProxyId(UINT32 id) { m_assignedZoneProxyId = id; }
+   UINT32 getAssignedZoneProxyId(bool backup = false) const { return backup ? m_backupZoneProxyId : m_primaryZoneProxyId; }
+   void setAssignedZoneProxyId(UINT32 id, bool backup) { if (backup) m_backupZoneProxyId = id; else m_primaryZoneProxyId = id; }
 
    virtual NXSL_Value *createNXSLObject(NXSL_VM *vm);
 
@@ -1433,7 +1434,7 @@ protected:
    void getItemDciValuesSummary(SummaryTable *tableDefinition, Table *tableData, UINT32 userId);
    void getTableDciValuesSummary(SummaryTable *tableDefinition, Table *tableData, UINT32 userId);
 
-   void addProxyDataCollectionElement(ProxyInfo *info, const DCObject *dco);
+   void addProxyDataCollectionElement(ProxyInfo *info, const DCObject *dco, UINT32 primaryProxyId);
    void addProxySnmpTarget(ProxyInfo *info, const Node *node);
    virtual void collectProxyInfo(ProxyInfo *info);
    static void collectProxyInfoCallback(NetObj *object, void *data);
@@ -2430,7 +2431,7 @@ public:
 	SNMP_Transport *createSnmpTransport(WORD port = 0, const TCHAR *context = NULL);
 	SNMP_SecurityContext *getSnmpSecurityContext() const;
 
-	UINT32 getEffectiveSnmpProxy();
+	UINT32 getEffectiveSnmpProxy(bool backup = false);
    UINT32 getEffectiveSshProxy();
    UINT32 getEffectiveIcmpProxy();
    UINT32 getEffectiveAgentProxy();
@@ -2842,14 +2843,14 @@ public:
    UINT32 getUIN() const { return m_uin; }
    const StringList *getSnmpPortList() const { return &m_snmpPorts; }
 
-   UINT32 getProxyNodeId(NetObj *object);
+   UINT32 getProxyNodeId(NetObj *object, bool backup = false);
 	bool isProxyNode(UINT32 nodeId) const;
 	IntegerArray<UINT32> *getAllProxyNodes() const;
 	void fillAgentConfigurationMessage(NXCPMessage *msg) const;
 
    AgentConnectionEx *acquireConnectionToProxy(bool validate = false);
 
-   void updateProxyStatus(Node *node);
+   void updateProxyStatus(Node *node, bool activeMode);
 
    void addSubnet(Subnet *pSubnet) { addChild(pSubnet); pSubnet->addParent(this); }
 

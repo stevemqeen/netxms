@@ -124,6 +124,8 @@ public abstract class AbstractObject
 	protected ObjectStatus status = ObjectStatus.UNKNOWN;
 	protected boolean isDeleted = false;
 	protected boolean inMaintenanceMode = false;
+	protected long primaryZoneProxyId = 0;
+   protected long backupZoneProxyId = 0;
 	protected String comments;
 	protected GeoLocation geolocation;
 	protected PostalAddress postalAddress;
@@ -204,6 +206,8 @@ public abstract class AbstractObject
 		isDeleted = msg.getFieldAsBoolean(NXCPCodes.VID_IS_DELETED);
 		status = ObjectStatus.getByValue(msg.getFieldAsInt32(NXCPCodes.VID_OBJECT_STATUS));
 		inMaintenanceMode = msg.getFieldAsBoolean(NXCPCodes.VID_MAINTENANCE_MODE);
+		primaryZoneProxyId = msg.getFieldAsInt64(NXCPCodes.VID_PRIMARY_ZONE_PROXY_ID);
+      backupZoneProxyId = msg.getFieldAsInt64(NXCPCodes.VID_BACKUP_ZONE_PROXY_ID);
 		comments = msg.getFieldAsString(NXCPCodes.VID_COMMENTS);
 		geolocation = new GeoLocation(msg);
 		postalAddress = new PostalAddress(msg);
@@ -956,6 +960,26 @@ public abstract class AbstractObject
       return inMaintenanceMode;
    }
    
+   /**
+    * Get primary zone proxy ID
+    * 
+    * @return primary zone proxy ID
+    */
+   public long getPrimaryZoneProxyId()
+   {
+      return primaryZoneProxyId;
+   }
+
+   /**
+    * Get backup zone proxy ID
+    * 
+    * @return backup zone proxy ID
+    */
+   public long getBackupZoneProxyId()
+   {
+      return backupZoneProxyId;
+   }
+
    /**
     * Add string to string set
     * 
