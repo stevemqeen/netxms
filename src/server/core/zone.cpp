@@ -370,7 +370,7 @@ UINT32 Zone::getProxyNodeId(NetObj *object, bool backup)
             if (!p->isAvailable)
                continue;
 
-            if (p->nodeId == object->getAssignedZoneProxyId(!backup))
+            if ((object != NULL) && (p->nodeId == object->getAssignedZoneProxyId(!backup)))
                continue;
 
             if ((proxy == NULL) || (p->loadAverage < proxy->loadAverage) || !proxy->isAvailable)
