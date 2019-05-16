@@ -241,14 +241,6 @@ bool GenericSocketListener::isConnectionAllowed(const InetAddress& peer)
 }
 
 /**
- * Process incoming connection
- */
-ConnectionProcessingResult GenericSocketListener::processConnection(SOCKET s, const InetAddress& peer)
-{
-   return CPR_COMPLETED;
-}
-
-/**
  * Check if external stop condition is reached
  */
 bool GenericSocketListener::isStopConditionReached()
@@ -372,7 +364,7 @@ void DatagramSocketListener::mainLoop()
       int nRet = sp.poll(1000);
       if ((nRet > 0) && !m_stop && !isStopConditionReached())
       {
-         processConnection(sp.isSet(m_socketV4) ? m_socketV4 : m_socketV6, InetAddress::NONE);
+         processDatagram(sp.isSet(m_socketV4) ? m_socketV4 : m_socketV6);
       }
       else if (nRet == -1)
       {

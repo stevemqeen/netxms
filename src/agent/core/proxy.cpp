@@ -24,7 +24,6 @@
 #include <socket_listener.h>
 
 #define DEBUG_TAG _T("proxy")
-#define REC_MSG_SIZE 16
 #define LISTEN_PORT 4700
 
 /**
@@ -33,6 +32,7 @@
 extern ThreadPool *g_dataCollectorPool;
 
 HashMap<ProxyKey, DataCollectionProxy> *g_proxyList = new HashMap<ProxyKey, DataCollectionProxy>();
+HashMap<UINT64, ServerProxyConfig> *g_proxyserverConfList = new HashMap<UINT64, ServerProxyConfig>();
 Mutex g_proxyListMutex;
 bool g_proxyConnectionCheckScheduled = false;
 
@@ -55,7 +55,7 @@ DataCollectionProxy::DataCollectionProxy(DataCollectionProxy *obj)
    m_used = obj->m_used;
 }
 
-static void SaveProxyToDatabase(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList)
+static void SaveProxyToDatabase(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList, ServerProxyConfig *cfg)
 {
    DB_HANDLE hdb = GetLocalDatabaseHandle();
    DBBegin(hdb);
@@ -89,6 +89,8 @@ static void SaveProxyToDatabase(UINT64 serverId, HashMap<ProxyKey, DataCollectio
    }
    DBFreeStatement(hStmt);
    delete it;
+   //TODO: save cfg to database
+
    DBCommit(hdb);
 }
 
@@ -106,6 +108,8 @@ void LoadProxyFromDatabase()
       }
       DBFreeResult(hResult);
    }
+
+   //TODO: load cfg from database
 }
 
 /**
@@ -113,7 +117,7 @@ void LoadProxyFromDatabase()
  *
  * @return connected socket on success or INVALID_SOCKET on error
  */
-SOCKET ConnectToHostUDP(const InetAddress& addr, UINT16 port, UINT32 timeout) //TODO: Add IPv6?
+SOCKET ConnectToHostUDP(const InetAddress& addr, UINT16 port) //TODO: Add IPv6?
 {
    SOCKET s = socket(addr.getFamily(), SOCK_DGRAM, 0);
    if (s == INVALID_SOCKET)
@@ -131,37 +135,60 @@ SOCKET ConnectToHostUDP(const InetAddress& addr, UINT16 port, UINT32 timeout) //
    return s;
 }
 
-static bool IsConnected(SOCKET sd, ProxyKey key) {
+static bool IsConnected(SOCKET sd, ProxyKey key, const BYTE *sharedKey, UINT32 nodeId) { //shared key is 16 byte
    bool result = false;
    int nRet, retryCount;
    ProxyKey tmp;
-   tmp.m_serverId = htonq(key.m_serverId);
-   tmp.m_proxyId = htonl(key.m_proxyId);
-   ProxyResponseMsg response;
+   ProxyMsg request;
+   ProxyMsg response;
+   GenerateRandomBytes(request.m_challange, PROXY_CHALANGE_SIZE);
+   request.m_serverId = htonq(key.m_serverId);
+   request.m_proxyIdDest = htonl(key.m_proxyId);
+   request.m_proxyIdSelf = htonl(nodeId);
+   SignMessage(reinterpret_cast<BYTE *>(&request), sizeof(request) - sizeof(request.m_hmac), sharedKey, ZONE_PROXY_KEY_LENGTH, request.m_hmac);
 
-   for (int retryCount = 5; retryCount > 0; retryCount--) {
+   for (int retryCount = 5; retryCount > 0; retryCount--)
+   {
 #ifdef MSG_NOSIGNAL
       nRet = send(sd, &tmp, sizeof(tmp), MSG_NOSIGNAL);
 #else
       nRet = send(sd, &tmp, sizeof(tmp), 0);
 #endif
 
-      if (nRet <= 0) {
+      if (nRet <= 0)
+      {
          continue;
       }
 
       nRet = RecvEx(sd, &response, sizeof(response), 0, 1000);
-      if (nRet <= 0) {
-         if (nRet == 0 || nRet == -1) {
+      if (nRet <= 0)
+      {
+         if (nRet == 0 || nRet == -1)
+         {
             break; // in case if socket was closed or on error just fail
          }
-      } else {
-         tmp.m_serverId = ntohq(response.m_serverId);
-         tmp.m_proxyId = ntohl(response.m_proxyId);
-         if(g_proxyList->contains(tmp))
+      }
+      else
+      {
+         if(ValidateMessageSignature(reinterpret_cast<BYTE *>(&response), sizeof(response) - sizeof(response.m_hmac), sharedKey, ZONE_PROXY_KEY_LENGTH, response.m_hmac) &&
+               !memcmp(response.m_challange, request.m_challange, PROXY_CHALANGE_SIZE) && request.m_proxyIdDest == response.m_proxyIdSelf &&
+               response.m_proxyIdDest == request.m_proxyIdSelf)
          {
             result = true;
             break;
+         }
+         else
+         {
+            TCHAR cp1[PROXY_CHALANGE_SIZE * 2 + 1];
+            TCHAR cp2[PROXY_CHALANGE_SIZE * 2 + 1];
+            TCHAR hmac1[SHA256_DIGEST_SIZE * 2 + 1];
+            TCHAR hmac2[SHA256_DIGEST_SIZE * 2 + 1];
+            nxlog_debug_tag(DEBUG_TAG, 1, _T("Invalid response message. Request message: challange=%s, serverId=") UINT64X_FMT(_T("016"))
+                  _T(", proxyDest=%d, proxySource=%d, hmac=%s. Response: challange=%s, serverId=") UINT64X_FMT(_T("016"))
+                  _T(", proxyDest=%d, proxySource=%d, hmac=%s."), BinToStr(request.m_challange, MD5_DIGEST_SIZE, cp1),
+                  key.m_serverId, key.m_proxyId, nodeId, BinToStr(request.m_hmac, MD5_DIGEST_SIZE, hmac1),
+                  BinToStr(response.m_challange, MD5_DIGEST_SIZE, cp2), ntohq(response.m_serverId), ntohl(response.m_proxyIdDest),
+                  ntohl(response.m_proxyIdSelf), BinToStr(response.m_hmac, MD5_DIGEST_SIZE, hmac2));
          }
       }
    }
@@ -171,7 +198,7 @@ static bool IsConnected(SOCKET sd, ProxyKey key) {
 /**
  * Thread checks if used in DCI proxy node is connected
  */
-void ProxyConnectionChecked(void *arg)
+void ProxyConnectionChecker(void *arg)
 {
    g_proxyListMutex.lock();
    Iterator<DataCollectionProxy> *it = g_proxyList->iterator();
@@ -182,10 +209,11 @@ void ProxyConnectionChecked(void *arg)
       if(dcProxy->isUsed())
       {
          reschedule = true;
-         SOCKET sd = ConnectToHostUDP(dcProxy->getAddr(), LISTEN_PORT, 5000);
+         SOCKET sd = ConnectToHostUDP(dcProxy->getAddr(), LISTEN_PORT);
          if(sd != INVALID_SOCKET)
          {
-            dcProxy->setConnected(IsConnected(sd, dcProxy->getKey()));
+            ServerProxyConfig *cfg = g_proxyserverConfList->get(dcProxy->getServerId());
+            dcProxy->setConnected(IsConnected(sd, dcProxy->getKey(), cfg->getSharedSecret(), cfg->getThisNodeId()));
          }
          closesocket(sd);
       }
@@ -193,7 +221,7 @@ void ProxyConnectionChecked(void *arg)
    delete it;
    g_proxyConnectionCheckScheduled = reschedule;
    if(reschedule)
-      ThreadPoolScheduleRelative(g_dataCollectorPool, 5000, ProxyConnectionChecked, NULL);
+      ThreadPoolScheduleRelative(g_dataCollectorPool, 5000, ProxyConnectionChecker, NULL);
 
    g_proxyListMutex.unlock();
 }
@@ -201,7 +229,7 @@ void ProxyConnectionChecked(void *arg)
 /**
  * Update proxy targets on data collection configuration update
  */
-void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList)
+void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList, ServerProxyConfig *cfg)
 {
    g_proxyListMutex.lock();
    Iterator<DataCollectionProxy> *it = proxyList->iterator();
@@ -235,11 +263,21 @@ void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> 
    }
    delete it;
    if(!g_proxyConnectionCheckScheduled)
-      ThreadPoolScheduleRelative(g_dataCollectorPool, 0, ProxyConnectionChecked, NULL);
+      ThreadPoolScheduleRelative(g_dataCollectorPool, 0, ProxyConnectionChecker, NULL);
+
+   ServerProxyConfig *old = g_proxyserverConfList->get(serverId);
+   if(old == NULL)
+   {
+      g_proxyserverConfList->set(serverId, new ServerProxyConfig(cfg));
+   }
+   else
+   {
+      old->update(cfg);
+   }
 
    g_proxyListMutex.unlock();
 
-   SaveProxyToDatabase(serverId, proxyList);
+   SaveProxyToDatabase(serverId, proxyList, cfg);
 }
 
 /**
@@ -248,7 +286,7 @@ void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> 
 class ProxyConnectionListener : public DatagramSocketListener
 {
 protected:
-   virtual ConnectionProcessingResult processConnection(SOCKET s, const InetAddress& peer);
+   virtual ConnectionProcessingResult processDatagram(SOCKET s);
    virtual bool isStopConditionReached();
 
 public:
@@ -266,26 +304,38 @@ bool ProxyConnectionListener::isStopConditionReached()
 /**
  * Process incoming message
  */
-ConnectionProcessingResult ProxyConnectionListener::processConnection(SOCKET s, const InetAddress& peer)
+ConnectionProcessingResult ProxyConnectionListener::processDatagram(SOCKET s)
 {
-   ProxyKey tmp;
-   ProxyResponseMsg response;
+   ProxyMsg request;
    SockAddrBuffer addr;
    TCHAR buffer[64];
    socklen_t addrLen = sizeof(SockAddrBuffer);
-   int bytes = recvfrom(s, &tmp, sizeof(tmp), 0, (struct sockaddr *)&addr, &addrLen);
+   int bytes = recvfrom(s, &request, sizeof(request), 0, (struct sockaddr *)&addr, &addrLen);
    if (bytes > 0)
    {
-      tmp.m_serverId = ntohq(tmp.m_serverId);
-      tmp.m_proxyId = ntohl(tmp.m_proxyId);
-      //check signature
       g_proxyListMutex.lock();
-      if(g_proxyList->contains(tmp))
+      ServerProxyConfig *cfg = g_proxyserverConfList->get(ntohl(request.m_serverId));
+      bool isValid = false;
+
+      if(cfg != NULL &&
+            ValidateMessageSignature(reinterpret_cast<BYTE *>(&request), sizeof(request) - sizeof(request.m_hmac), cfg->getSharedSecret(), ZONE_PROXY_KEY_LENGTH, request.m_hmac) &&
+            ntohl(request.m_proxyIdDest) == cfg->getThisNodeId())
       {
-         response.m_timestamp = htonq(static_cast<UINT64>(time(NULL)));
-         response.m_serverId = htonq(tmp.m_serverId);
-         response.m_proxyId = htonl(tmp.m_proxyId);
-         if (sendto(s, &response, sizeof(response), 0, (struct sockaddr *)&addr, addrLen) < 0)
+         if(g_proxyList->contains(GetKey(cfg->getServerId(), ntohl(request.m_proxyIdSelf))) &&
+               cfg->getZoneUIN() == request.m_zoneUin)
+         {
+            isValid = true;
+            UINT32 tmp = request.m_proxyIdDest;
+            request.m_proxyIdDest = request.m_proxyIdSelf;
+            request.m_proxyIdSelf = tmp;
+            SignMessage(reinterpret_cast<BYTE *>(&request), sizeof(request) - sizeof(request.m_hmac), cfg->getSharedSecret(), ZONE_PROXY_KEY_LENGTH, request.m_hmac);
+         }
+      }
+      g_proxyListMutex.unlock();
+
+      if(isValid)
+      {
+         if (sendto(s, &request, sizeof(request), 0, (struct sockaddr *)&addr, addrLen) < 0)
          {
             nxlog_debug_tag(DEBUG_TAG, 1, _T("ProxyConnectionListener: unable send response to requester: %s"), SockaddrToStr((struct sockaddr *)&addr, buffer));
          }
@@ -293,9 +343,8 @@ ConnectionProcessingResult ProxyConnectionListener::processConnection(SOCKET s, 
       else
       {
          nxlog_debug_tag(DEBUG_TAG, 1, _T("ProxyConnectionListener: the packet drop: ip=%s, serverid=") UINT64X_FMT(_T("016")) _T(", nodeid=%d"),
-               SockaddrToStr((struct sockaddr *)&addr, buffer), tmp.m_serverId, tmp.m_proxyId);
+                        SockaddrToStr((struct sockaddr *)&addr, buffer), ntohl(request.m_serverId), ntohl(request.m_proxyIdSelf));
       }
-      g_proxyListMutex.unlock();
    }
    return CPR_COMPLETED;
 }

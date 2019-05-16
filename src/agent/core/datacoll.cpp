@@ -35,11 +35,12 @@
 void UpdateSnmpTarget(SNMPTarget *target);
 UINT32 GetSnmpValue(const uuid& target, UINT16 port, const TCHAR *oid, TCHAR *value, int interpretRawValue);
 
-void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList);
+void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList, ServerProxyConfig *cfg);
 void LoadProxyFromDatabase();
 extern HashMap<ProxyKey, DataCollectionProxy> *g_proxyList;
 extern Mutex g_proxyListMutex;
-void ProxyConnectionChecked(void *arg);
+void ProxyConnectionChecker(void *arg);
+THREAD_RESULT THREAD_CALL ProxyListenerThread(void *arg);
 
 extern UINT32 g_dcReconciliationBlockSize;
 extern UINT32 g_dcReconciliationTimeout;
@@ -218,7 +219,7 @@ void DataCollectionItem::saveToDatabase(bool newObject)
 		hStmt = DBPrepare(db,
                     _T("INSERT INTO dc_config (type,origin,name,polling_interval,")
                     _T("last_poll,snmp_port,snmp_target_guid,snmp_raw_type,proxy_id,server_id,dci_id)")
-                    _T("VALUES (?,?,?,?,?,?,?,?,?,?)"));
+                    _T("VALUES (?,?,?,?,?,?,?,?,?,?,?)"));
    }
    else
    {
@@ -1150,7 +1151,10 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
       DBCommit(hdb);
 
    s_itemLock.unlock();
-   UpdateProxyTargets(serverId, proxyList);
+   BYTE sharedSecret[ZONE_PROXY_KEY_LENGTH];
+   msg->getFieldAsBinary(VID_SHARED_SECRET, sharedSecret, ZONE_PROXY_KEY_LENGTH);
+   ServerProxyConfig cfg(serverId, msg->getFieldAsUInt32(VID_THIS_PROXY_ID), msg->getFieldAsUInt32(VID_ZONE_UIN), sharedSecret);
+   UpdateProxyTargets(serverId, proxyList, &cfg);
 
    DebugPrintf(4, _T("Data collection for server ") UINT64X_FMT(_T("016")) _T(" reconfigured"), serverId);
 }
@@ -1287,6 +1291,7 @@ static THREAD s_dataCollectionSchedulerThread = INVALID_THREAD_HANDLE;
 static THREAD s_dataSenderThread = INVALID_THREAD_HANDLE;
 static THREAD s_databaseWriterThread = INVALID_THREAD_HANDLE;
 static THREAD s_reconciliationThread = INVALID_THREAD_HANDLE;
+static THREAD s_proxyListennerThread = INVALID_THREAD_HANDLE;
 
 /**
  * Initialize and start local data collector
@@ -1329,8 +1334,9 @@ void StartLocalDataCollector()
    s_dataSenderThread = ThreadCreateEx(DataSender, 0, NULL);
    s_databaseWriterThread = ThreadCreateEx(DatabaseWriter, 0, NULL);
    s_reconciliationThread = ThreadCreateEx(ReconciliationThread, 0, NULL);
+   s_proxyListennerThread = ThreadCreateEx(ProxyListenerThread, 0 ,NULL);
    ThreadPoolScheduleRelative(g_dataCollectorPool, STALLED_DATA_CHECK_INTERVAL, ClearStalledOfflineData, NULL);
-   ThreadPoolScheduleRelative(g_dataCollectorPool, 0, ProxyConnectionChecked, NULL);
+   ThreadPoolScheduleRelative(g_dataCollectorPool, 0, ProxyConnectionChecker, NULL);
 
    s_dataCollectorStarted = true;
 }
@@ -1364,6 +1370,9 @@ void ShutdownLocalDataCollector()
 
    DebugPrintf(5, _T("Waiting for data reconciliation thread termination"));
    ThreadJoin(s_reconciliationThread);
+
+   DebugPrintf(5, _T("Waiting for proxy heartbeat listening thread"));
+   ThreadJoin(s_proxyListennerThread);
 }
 
 /**

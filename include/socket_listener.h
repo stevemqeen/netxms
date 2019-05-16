@@ -61,7 +61,6 @@ protected:
    int m_type;
 
    virtual bool isConnectionAllowed(const InetAddress& peer);
-   virtual ConnectionProcessingResult processConnection(SOCKET s, const InetAddress& peer);
    virtual bool isStopConditionReached();
 
 public:
@@ -87,6 +86,9 @@ class LIBNETXMS_EXPORTABLE StreamSocketListener : public GenericSocketListener
 private:
    typedef GenericSocketListener super;
 
+protected:
+   virtual ConnectionProcessingResult processConnection(SOCKET s, const InetAddress& peer) = 0;
+
 public:
    StreamSocketListener(UINT16 port, bool allowV4 = true, bool allowV6 = true) : super(port, allowV4, allowV6) { m_type = SOCK_STREAM; }
    virtual void mainLoop() override;
@@ -96,6 +98,9 @@ class LIBNETXMS_EXPORTABLE DatagramSocketListener : public GenericSocketListener
 {
 private:
    typedef GenericSocketListener super;
+
+protected:
+   virtual ConnectionProcessingResult processDatagram(SOCKET s) = 0;
 
 public:
    DatagramSocketListener(UINT16 port, bool allowV4 = true, bool allowV6 = true) : super(port, allowV4, allowV6) { m_type = SOCK_DGRAM; }

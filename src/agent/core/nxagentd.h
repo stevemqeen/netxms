@@ -603,6 +603,8 @@ public:
    void writeSocket(const BYTE *data, size_t size);
 };
 
+#define PROXY_CHALANGE_SIZE 8
+
 #ifdef __HP_aCC
 #pragma pack 1
 #else
@@ -618,13 +620,16 @@ typedef struct {
 } ProxyKey;
 
 /**
- * Data collection proxy key
+ * Data collection proxy message
  */
 typedef struct {
-   UINT64 m_timestamp;
+   BYTE m_challange[PROXY_CHALANGE_SIZE];
    UINT64 m_serverId;
-   UINT32 m_proxyId;
-} ProxyResponseMsg;
+   UINT32 m_proxyIdDest;
+   UINT32 m_proxyIdSelf;
+   UINT32 m_zoneUin;
+   BYTE m_hmac[SHA256_DIGEST_SIZE];
+} ProxyMsg;
 
 #ifdef __HP_aCC
 #pragma pack
@@ -644,10 +649,31 @@ inline ProxyKey GetKey(UINT64 serverId, UINT32 proxyId)
 }
 
 /**
+ * Server proxy information
+ */
+class ServerProxyConfig
+{
+private:
+   UINT64 m_serverId;
+   UINT32 m_thisNodeId;
+   UINT32 m_zoneUin;
+   BYTE m_sharedSecret[ZONE_PROXY_KEY_LENGTH];
+public:
+   ServerProxyConfig(UINT64 serverId, UINT32 thisNodeId, UINT32 zoneUin, BYTE *sharedSecter) { m_serverId = serverId; m_thisNodeId = thisNodeId; m_zoneUin = zoneUin; memcpy(&m_sharedSecret, sharedSecter, ZONE_PROXY_KEY_LENGTH); }
+   ServerProxyConfig(ServerProxyConfig *cfg) { m_serverId = cfg->m_serverId; m_thisNodeId = cfg->m_thisNodeId; m_zoneUin = cfg->m_zoneUin; memcpy(&m_sharedSecret, cfg->m_sharedSecret, ZONE_PROXY_KEY_LENGTH); }
+   void update(ServerProxyConfig *cfg) { m_thisNodeId = cfg->m_thisNodeId; m_zoneUin = cfg->m_zoneUin; memcpy(&m_sharedSecret, cfg->m_sharedSecret, ZONE_PROXY_KEY_LENGTH); }
+   UINT64 getServerId() const { return m_serverId; }
+   UINT32 getThisNodeId() const { return m_thisNodeId; }
+   UINT32 getZoneUIN() const { return m_zoneUin; }
+   const BYTE *getSharedSecret() const { return m_sharedSecret; }
+};
+
+/**
  * Data collection proxy information
  */
 class DataCollectionProxy
 {
+private:
    UINT64 m_serverId; //to databse
    UINT32 m_proxyId; //to database
    InetAddress m_addr; //to database
@@ -668,7 +694,6 @@ public:
    void setConnected(bool connected) { m_connected = connected; }
    void setUsed(bool used) { m_used = used; }
    void setAddr(const InetAddress &addr) { m_addr = addr; }
-
 };
 
 /**
