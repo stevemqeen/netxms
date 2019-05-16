@@ -603,7 +603,7 @@ public:
    void writeSocket(const BYTE *data, size_t size);
 };
 
-#define PROXY_CHALANGE_SIZE 8
+#define PROXY_CHALLENGE_SIZE 8
 
 #ifdef __HP_aCC
 #pragma pack 1
@@ -614,22 +614,30 @@ public:
 /**
  * Data collection proxy key
  */
-typedef struct {
-   UINT64 m_serverId;
-   UINT32 m_proxyId;
-} ProxyKey;
+struct ProxyKey
+{
+   UINT64 serverId;
+   UINT32 proxyId;
+
+   ProxyKey(UINT64 _serverId, UINT32 _proxyId)
+   {
+      serverId = _serverId;
+      proxyId = _proxyId;
+   }
+};
 
 /**
  * Data collection proxy message
  */
-typedef struct {
-   BYTE m_challange[PROXY_CHALANGE_SIZE];
-   UINT64 m_serverId;
-   UINT32 m_proxyIdDest;
-   UINT32 m_proxyIdSelf;
-   UINT32 m_zoneUin;
-   BYTE m_hmac[SHA256_DIGEST_SIZE];
-} ProxyMsg;
+struct ProxyMsg
+{
+   BYTE challenge[PROXY_CHALLENGE_SIZE];
+   UINT64 serverId;
+   UINT32 proxyIdDest;
+   UINT32 proxyIdSelf;
+   UINT32 zoneUin;
+   BYTE hmac[SHA256_DIGEST_SIZE];
+};
 
 #ifdef __HP_aCC
 #pragma pack
@@ -638,30 +646,22 @@ typedef struct {
 #endif
 
 /**
- * Data collection proxy key calculation function
+ * Zone configuration
  */
-inline ProxyKey GetKey(UINT64 serverId, UINT32 proxyId)
-{
-   ProxyKey key;
-   key.m_serverId = serverId;
-   key.m_proxyId = proxyId;
-   return key;
-}
-
-/**
- * Server proxy information
- */
-class ServerProxyConfig
+class ZoneConfiguration
 {
 private:
    UINT64 m_serverId;
    UINT32 m_thisNodeId;
    UINT32 m_zoneUin;
    BYTE m_sharedSecret[ZONE_PROXY_KEY_LENGTH];
+
 public:
-   ServerProxyConfig(UINT64 serverId, UINT32 thisNodeId, UINT32 zoneUin, BYTE *sharedSecter) { m_serverId = serverId; m_thisNodeId = thisNodeId; m_zoneUin = zoneUin; memcpy(&m_sharedSecret, sharedSecter, ZONE_PROXY_KEY_LENGTH); }
-   ServerProxyConfig(ServerProxyConfig *cfg) { m_serverId = cfg->m_serverId; m_thisNodeId = cfg->m_thisNodeId; m_zoneUin = cfg->m_zoneUin; memcpy(&m_sharedSecret, cfg->m_sharedSecret, ZONE_PROXY_KEY_LENGTH); }
-   void update(ServerProxyConfig *cfg) { m_thisNodeId = cfg->m_thisNodeId; m_zoneUin = cfg->m_zoneUin; memcpy(&m_sharedSecret, cfg->m_sharedSecret, ZONE_PROXY_KEY_LENGTH); }
+   ZoneConfiguration(UINT64 serverId, UINT32 thisNodeId, UINT32 zoneUin, BYTE *sharedSecret);
+   ZoneConfiguration(const ZoneConfiguration *cfg);
+
+   void update(const ZoneConfiguration *cfg);
+
    UINT64 getServerId() const { return m_serverId; }
    UINT32 getThisNodeId() const { return m_thisNodeId; }
    UINT32 getZoneUIN() const { return m_zoneUin; }
@@ -674,26 +674,26 @@ public:
 class DataCollectionProxy
 {
 private:
-   UINT64 m_serverId; //to databse
-   UINT32 m_proxyId; //to database
-   InetAddress m_addr; //to database
-   bool m_connected; //if not connected collect data from data colleaction
-   bool m_used; // if is used
+   UINT64 m_serverId;
+   UINT32 m_proxyId;
+   InetAddress m_address;
+   bool m_connected;
+   bool m_inUse;
 
 public:
-   DataCollectionProxy(UINT64 serverId, UINT32 proxyId, InetAddress ipAddr);
-   DataCollectionProxy(DataCollectionProxy *obj);
+   DataCollectionProxy(UINT64 serverId, UINT32 proxyId, const InetAddress& address);
+   DataCollectionProxy(const DataCollectionProxy *src);
 
-   ProxyKey getKey() const { return GetKey(m_serverId, m_proxyId); }
-   bool isConnected() const { return m_used; }
-   bool isUsed() const { return m_connected; }
-   const InetAddress &getAddr() const { return m_addr; }
+   void checkConnection();
+   void setAddress(const InetAddress &addr) { m_address = addr; }
+   void setInUse(bool inUse) { m_inUse = inUse; }
+
+   ProxyKey getKey() const { return ProxyKey(m_serverId, m_proxyId); }
+   bool isConnected() const { return m_connected; }
+   bool isInUse() const { return m_inUse; }
+   const InetAddress &getAddress() const { return m_address; }
    UINT64 getServerId() const { return m_serverId; }
    UINT32 getProxyId() const { return m_proxyId; }
-
-   void setConnected(bool connected) { m_connected = connected; }
-   void setUsed(bool used) { m_used = used; }
-   void setAddr(const InetAddress &addr) { m_addr = addr; }
 };
 
 /**

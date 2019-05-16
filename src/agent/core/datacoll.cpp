@@ -35,12 +35,13 @@
 void UpdateSnmpTarget(SNMPTarget *target);
 UINT32 GetSnmpValue(const uuid& target, UINT16 port, const TCHAR *oid, TCHAR *value, int interpretRawValue);
 
-void UpdateProxyTargets(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList, ServerProxyConfig *cfg);
-void LoadProxyFromDatabase();
-extern HashMap<ProxyKey, DataCollectionProxy> *g_proxyList;
-extern Mutex g_proxyListMutex;
+void LoadProxyConfiguration();
+void UpdateProxyConfiguration(UINT64 serverId, HashMap<ProxyKey, DataCollectionProxy> *proxyList, const ZoneConfiguration *zone);
 void ProxyConnectionChecker(void *arg);
 THREAD_RESULT THREAD_CALL ProxyListenerThread(void *arg);
+
+extern HashMap<ProxyKey, DataCollectionProxy> g_proxyList;
+extern Mutex g_proxyListMutex;
 
 extern UINT32 g_dcReconciliationBlockSize;
 extern UINT32 g_dcReconciliationTimeout;
@@ -953,21 +954,20 @@ static UINT32 DataCollectionSchedulerRun()
       UINT32 timeToPoll = dci->getTimeToNextPoll(now);
       if (timeToPoll == 0)
       {
-         bool schedule = false;
-         if(dci->getProxyId() == 0)
+         bool schedule;
+         if (dci->getProxyId() == 0)
          {
             schedule = true;
          }
          else
          {
             g_proxyListMutex.lock();
-            DataCollectionProxy *proxy = g_proxyList->get(GetKey(dci->getServerId(), dci->getProxyId()));
-            if(proxy != NULL && !proxy->isConnected())
-               schedule = true;
+            DataCollectionProxy *proxy = g_proxyList.get(ProxyKey(dci->getServerId(), dci->getProxyId()));
+            schedule = (proxy != NULL && !proxy->isConnected());
             g_proxyListMutex.unlock();
          }
 
-         if(schedule)
+         if (schedule)
          {
             nxlog_debug_tag(DEBUG_TAG, 7, _T("DataCollector: polling DCI %d \"%s\""), dci->getId(), dci->getName());
 
@@ -1056,12 +1056,12 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
       for(int i = 0; i < count; i++)
       {
          UINT32 proxyId = msg->getFieldAsInt32(fieldId);
-         proxyList->set(GetKey(serverId, proxyId),
+         proxyList->set(ProxyKey(serverId, proxyId),
                new DataCollectionProxy(serverId, proxyId, msg->getFieldAsInetAddress(fieldId + 1)));
          fieldId += 10;
       }
    }
-   DebugPrintf(4, _T("%d proxy targets received from server ") UINT64X_FMT(_T("016")), count, serverId);
+   DebugPrintf(4, _T("%d proxies received from server ") UINT64X_FMT(_T("016")), count, serverId);
 
    ObjectArray<DataCollectionItem> config(32, 32, true);
 
@@ -1105,10 +1105,10 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
       //Update used proxies
       if (item->getProxyId() > 0)
       {
-         DataCollectionProxy *proxy = proxyList->get(GetKey(serverId, item->getProxyId()));
-         if(proxy != NULL)
+         DataCollectionProxy *proxy = proxyList->get(ProxyKey(serverId, item->getProxyId()));
+         if (proxy != NULL)
          {
-            proxy->setUsed(true);
+            proxy->setInUse(true);
          }
          else
          {
@@ -1151,10 +1151,13 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
       DBCommit(hdb);
 
    s_itemLock.unlock();
+
    BYTE sharedSecret[ZONE_PROXY_KEY_LENGTH];
    msg->getFieldAsBinary(VID_SHARED_SECRET, sharedSecret, ZONE_PROXY_KEY_LENGTH);
-   ServerProxyConfig cfg(serverId, msg->getFieldAsUInt32(VID_THIS_PROXY_ID), msg->getFieldAsUInt32(VID_ZONE_UIN), sharedSecret);
-   UpdateProxyTargets(serverId, proxyList, &cfg);
+   ZoneConfiguration cfg(serverId, msg->getFieldAsUInt32(VID_THIS_PROXY_ID), msg->getFieldAsUInt32(VID_ZONE_UIN), sharedSecret);
+   UpdateProxyConfiguration(serverId, proxyList, &cfg);
+
+   delete proxyList;
 
    DebugPrintf(4, _T("Data collection for server ") UINT64X_FMT(_T("016")) _T(" reconfigured"), serverId);
 }
@@ -1213,7 +1216,8 @@ static void LoadState()
       }
       DBFreeResult(hResult);
    }
-   LoadProxyFromDatabase();
+
+   LoadProxyConfiguration();
 }
 
 /**
