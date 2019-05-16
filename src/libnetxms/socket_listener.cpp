@@ -26,7 +26,7 @@
 /**
  * Constructor
  */
-GenericSocketListener::GenericSocketListener(UINT16 port, bool allowV4, bool allowV6)
+GenericSocketListener::GenericSocketListener(int type, UINT16 port, bool allowV4, bool allowV6)
 {
    m_listenAddress = NULL;
    m_port = port;
@@ -38,7 +38,7 @@ GenericSocketListener::GenericSocketListener(UINT16 port, bool allowV4, bool all
    m_acceptErrors = 0;
    m_acceptedConnections = 0;
    m_rejectedConnections = 0;
-   m_type = 0;
+   m_type = type;
 }
 
 /**
@@ -157,7 +157,9 @@ bool GenericSocketListener::initialize()
    int bindFailures = 0;
    if (m_allowV4)
    {
-      nxlog_debug(1, _T("SocketListener/%s: Trying to bind on %s:%d"), m_name, SockaddrToStr((struct sockaddr *)&servAddr, buffer), ntohs(servAddr.sin_port));
+      nxlog_debug(1, _T("SocketListener/%s: Trying to bind on %s:%d/%s"), m_name,
+               SockaddrToStr((struct sockaddr *)&servAddr, buffer), ntohs(servAddr.sin_port),
+               (m_type == SOCK_STREAM) ? _T("tcp") : _T("udp"));
       if (bind(m_socketV4, (struct sockaddr *)&servAddr, sizeof(struct sockaddr_in)) != 0)
       {
          nxlog_write_generic(NXLOG_ERROR, _T("SocketListener/%s: cannot bind IPv4 socket (%s)"), m_name, GetLastSocketErrorText(buffer, 256));
@@ -172,7 +174,9 @@ bool GenericSocketListener::initialize()
 #ifdef WITH_IPV6
    if (m_allowV6)
    {
-      nxlog_debug(1, _T("SocketListener/%s: Trying to bind on [%s]:%d"), m_name, SockaddrToStr((struct sockaddr *)&servAddr6, buffer), ntohs(servAddr6.sin6_port));
+      nxlog_debug(1, _T("SocketListener/%s: Trying to bind on [%s]:%d/%s"), m_name,
+               SockaddrToStr((struct sockaddr *)&servAddr6, buffer), ntohs(servAddr6.sin6_port),
+               (m_type == SOCK_STREAM) ? _T("tcp") : _T("udp"));
       if (bind(m_socketV6, (struct sockaddr *)&servAddr6, sizeof(struct sockaddr_in6)) != 0)
       {
          nxlog_write_generic(NXLOG_ERROR, _T("SocketListener/%s: cannot bind IPv6 socket (%s)"), m_name, GetLastSocketErrorText(buffer, 256));
@@ -191,7 +195,7 @@ bool GenericSocketListener::initialize()
       return false;
 
    // Set up queue
-   if(m_type == SOCK_STREAM)
+   if (m_type == SOCK_STREAM)
    {
       if (m_allowV4)
       {
@@ -233,19 +237,19 @@ void GenericSocketListener::shutdown()
 }
 
 /**
- * Check if incoming connection is allowed
- */
-bool GenericSocketListener::isConnectionAllowed(const InetAddress& peer)
-{
-   return true;
-}
-
-/**
  * Check if external stop condition is reached
  */
 bool GenericSocketListener::isStopConditionReached()
 {
    return false;
+}
+
+/**
+ * Check if incoming connection is allowed
+ */
+bool StreamSocketListener::isConnectionAllowed(const InetAddress& peer)
+{
+   return true;
 }
 
 /**

@@ -402,7 +402,7 @@ ConnectionProcessingResult ProxyConnectionListener::processDatagram(SOCKET s)
 THREAD_RESULT THREAD_CALL ProxyListenerThread(void *arg)
 {
    ThreadSetName("ProxyHbLsnr");
-   ProxyConnectionListener listener(LISTEN_PORT, (g_dwFlags & AF_DISABLE_IPV4), (g_dwFlags & AF_DISABLE_IPV6));
+   ProxyConnectionListener listener(LISTEN_PORT, (g_dwFlags & AF_DISABLE_IPV4) == 0, (g_dwFlags & AF_DISABLE_IPV6) == 0);
    if (!listener.initialize())
       return THREAD_OK;
 
