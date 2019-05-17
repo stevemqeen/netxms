@@ -75,7 +75,7 @@ private:
    BYTE m_busy;
 	uuid m_snmpTargetGuid;
    time_t m_lastPollTime;
-   UINT32 m_proxyId;
+   UINT32 m_backupProxyId;
 
 public:
    DataCollectionItem(UINT64 serverId, NXCPMessage *msg, UINT32 baseId);
@@ -93,7 +93,7 @@ public:
    int getSnmpRawValueType() const { return (int)m_snmpRawValueType; }
    UINT32 getPollingInterval() const { return (UINT32)m_pollingInterval; }
    time_t getLastPollTime() { return m_lastPollTime; }
-   UINT32 getProxyId() const { return m_proxyId; }
+   UINT32 getProxyId() const { return m_backupProxyId; }
 
    bool equals(const DataCollectionItem *item) const { return (m_serverId == item->m_serverId) && (m_id == item->m_id); }
 
@@ -129,7 +129,7 @@ DataCollectionItem::DataCollectionItem(UINT64 serverId, NXCPMessage *msg, UINT32
    m_snmpTargetGuid = msg->getFieldAsGUID(baseId + 6);
    m_snmpPort = msg->getFieldAsUInt16(baseId + 7);
    m_snmpRawValueType = (BYTE)msg->getFieldAsUInt16(baseId + 8);
-   m_proxyId = msg->getFieldAsInt32(baseId + 9);
+   m_backupProxyId = msg->getFieldAsInt32(baseId + 9);
    m_busy = 0;
 }
 
@@ -148,7 +148,7 @@ DataCollectionItem::DataCollectionItem(DB_RESULT hResult, int row)
    m_snmpPort = DBGetFieldULong(hResult, row, 7);
    m_snmpTargetGuid = DBGetFieldGUID(hResult, row, 8);
    m_snmpRawValueType = (BYTE)DBGetFieldULong(hResult, row, 9);
-   m_proxyId = DBGetFieldULong(hResult, row, 10);
+   m_backupProxyId = DBGetFieldULong(hResult, row, 10);
    m_busy = 0;
 }
 
@@ -167,7 +167,7 @@ DataCollectionItem::DataCollectionItem(DB_RESULT hResult, int row)
    m_snmpTargetGuid = item->m_snmpTargetGuid;
    m_snmpPort = item->m_snmpPort;
    m_snmpRawValueType = item->m_snmpRawValueType;
-   m_proxyId = item->m_proxyId;
+   m_backupProxyId = item->m_backupProxyId;
    m_busy = 0;
  }
 
@@ -189,7 +189,7 @@ void DataCollectionItem::updateAndSave(const DataCollectionItem *item)
    if ((m_type != item->m_type) || (m_origin != item->m_origin) || _tcscmp(m_name, item->m_name) ||
        (m_pollingInterval != item->m_pollingInterval) || m_snmpTargetGuid.compare(item->m_snmpTargetGuid) ||
        (m_snmpPort != item->m_snmpPort) || (m_snmpRawValueType != item->m_snmpRawValueType) ||
-       (m_lastPollTime < item->m_lastPollTime) || m_proxyId != item->m_proxyId)
+       (m_lastPollTime < item->m_lastPollTime) || m_backupProxyId != item->m_backupProxyId)
    {
       m_type = item->m_type;
       m_origin = item->m_origin;
@@ -200,7 +200,7 @@ void DataCollectionItem::updateAndSave(const DataCollectionItem *item)
       m_snmpTargetGuid = item->m_snmpTargetGuid;
       m_snmpPort = item->m_snmpPort;
       m_snmpRawValueType = item->m_snmpRawValueType;
-      m_proxyId = item->m_proxyId;
+      m_backupProxyId = item->m_backupProxyId;
       saveToDatabase(false);
    }
 }
@@ -241,7 +241,7 @@ void DataCollectionItem::saveToDatabase(bool newObject)
 	DBBind(hStmt, 6, DB_SQLTYPE_INTEGER, (LONG)m_snmpPort);
    DBBind(hStmt, 7, DB_SQLTYPE_VARCHAR, m_snmpTargetGuid);
 	DBBind(hStmt, 8, DB_SQLTYPE_INTEGER, (LONG)m_snmpRawValueType);
-   DBBind(hStmt, 9, DB_SQLTYPE_INTEGER, (LONG)m_proxyId);
+   DBBind(hStmt, 9, DB_SQLTYPE_INTEGER, (LONG)m_backupProxyId);
 	DBBind(hStmt, 10, DB_SQLTYPE_BIGINT, m_serverId);
 	DBBind(hStmt, 11, DB_SQLTYPE_INTEGER, (LONG)m_id);
 

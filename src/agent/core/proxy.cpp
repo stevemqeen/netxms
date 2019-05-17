@@ -361,7 +361,7 @@ ConnectionProcessingResult ProxyConnectionListener::processDatagram(SOCKET s)
    if (bytes > 0)
    {
       g_proxyListMutex.lock();
-      ZoneConfiguration *cfg = g_proxyserverConfList->get(ntohl(request.serverId));
+      ZoneConfiguration *cfg = g_proxyserverConfList->get(ntohq(request.serverId));
       bool isValid = false;
 
       if ((cfg != NULL) &&
@@ -390,7 +390,7 @@ ConnectionProcessingResult ProxyConnectionListener::processDatagram(SOCKET s)
       {
          TCHAR buffer[64];
          nxlog_debug_tag(DEBUG_TAG, 1, _T("ProxyConnectionListener: invalid packet drop: ip=%s, serverid=") UINT64X_FMT(_T("016")) _T(", nodeid=%d"),
-                        SockaddrToStr((struct sockaddr *)&addr, buffer), ntohl(request.serverId), ntohl(request.proxyIdSelf));
+                        SockaddrToStr((struct sockaddr *)&addr, buffer), ntohq(request.serverId), ntohl(request.proxyIdSelf));
       }
    }
    return CPR_COMPLETED;
