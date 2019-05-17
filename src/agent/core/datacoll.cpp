@@ -1048,7 +1048,7 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
    DebugPrintf(4, _T("%d SNMP targets received from server ") UINT64X_FMT(_T("016")), count, serverId);
 
    //Read proxy list if exists
-   HashMap<ProxyKey, DataCollectionProxy> *proxyList = new HashMap<ProxyKey, DataCollectionProxy>();
+   HashMap<ProxyKey, DataCollectionProxy> *proxyList = new HashMap<ProxyKey, DataCollectionProxy>(true);
    count = msg->getFieldAsInt32(VID_ZONE_PROXY_COUNT);
    if (count > 0)
    {

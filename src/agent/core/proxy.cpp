@@ -32,7 +32,7 @@
 extern ThreadPool *g_dataCollectorPool;
 
 HashMap<ProxyKey, DataCollectionProxy> g_proxyList;
-HashMap<UINT64, ZoneConfiguration> *g_proxyserverConfList = new HashMap<UINT64, ZoneConfiguration>();
+HashMap<UINT64, ZoneConfiguration> *g_proxyserverConfList = new HashMap<UINT64, ZoneConfiguration>(true);
 Mutex g_proxyListMutex;
 
 /**
@@ -80,11 +80,9 @@ static void SaveProxyConfiguration(UINT64 serverId, HashMap<ProxyKey, DataCollec
    DB_HANDLE hdb = GetLocalDatabaseHandle();
    DBBegin(hdb);
 
-   Iterator<DataCollectionProxy> *it = proxyList->iterator();
-
    TCHAR query[256];
-   _sntprintf(query, 256, _T("DELETE FROM dc_config WHERE server_id=") UINT64_FMT, serverId);
-   if (DBQuery(hdb, query))
+   _sntprintf(query, 256, _T("DELETE FROM dc_proxy WHERE server_id=") UINT64_FMT, serverId);
+   if (!DBQuery(hdb, query))
    {
       DBRollback(hdb);
       return;
@@ -95,23 +93,25 @@ static void SaveProxyConfiguration(UINT64 serverId, HashMap<ProxyKey, DataCollec
       DBRollback(hdb);
       return;
    }
-   while (it->hasNext())
+
+   bool success = true;
+   Iterator<DataCollectionProxy> *it = proxyList->iterator();
+   while(it->hasNext() && success)
    {
       DataCollectionProxy *dcp = it->next();
       DBBind(hStmt, 1, DB_SQLTYPE_BIGINT, dcp->getServerId());
       DBBind(hStmt, 2, DB_SQLTYPE_INTEGER, dcp->getProxyId());
       DBBind(hStmt, 3, DB_SQLTYPE_VARCHAR, dcp->getAddress());
-      if (!DBExecute(hStmt))
-      {
-         DBRollback(hdb);
-         return;
-      }
+      success = DBExecute(hStmt);
    }
    DBFreeStatement(hStmt);
    delete it;
    //TODO: save cfg to database
 
-   DBCommit(hdb);
+   if (success)
+      DBCommit(hdb);
+   else
+      DBRollback(hdb);
 }
 
 /**
