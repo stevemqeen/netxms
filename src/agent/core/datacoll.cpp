@@ -1153,11 +1153,14 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
 
    s_itemLock.unlock();
 
-   BYTE sharedSecret[ZONE_PROXY_KEY_LENGTH];
-   msg->getFieldAsBinary(VID_SHARED_SECRET, sharedSecret, ZONE_PROXY_KEY_LENGTH);
-   ZoneConfiguration cfg(serverId, msg->getFieldAsUInt32(VID_THIS_PROXY_ID), msg->getFieldAsUInt32(VID_ZONE_UIN), sharedSecret);
-   UpdateProxyConfiguration(serverId, proxyList, &cfg);
-
+   if (msg->isFieldExist(VID_THIS_PROXY_ID))
+   {
+      // FIXME: delete configuration if not set?
+      BYTE sharedSecret[ZONE_PROXY_KEY_LENGTH];
+      msg->getFieldAsBinary(VID_SHARED_SECRET, sharedSecret, ZONE_PROXY_KEY_LENGTH);
+      ZoneConfiguration cfg(serverId, msg->getFieldAsUInt32(VID_THIS_PROXY_ID), msg->getFieldAsUInt32(VID_ZONE_UIN), sharedSecret);
+      UpdateProxyConfiguration(serverId, proxyList, &cfg);
+   }
    delete proxyList;
 
    DebugPrintf(4, _T("Data collection for server ") UINT64X_FMT(_T("016")) _T(" reconfigured"), serverId);
