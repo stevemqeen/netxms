@@ -450,7 +450,7 @@ void Zone::fillAgentConfigurationMessage(NXCPMessage *msg) const
       {
          msg->setField(fieldId++, p->nodeId);
          msg->setField(fieldId++, node->getIpAddress());
-         fieldId += 10;
+         fieldId += 8;
          count++;
       }
    }
