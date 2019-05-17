@@ -519,7 +519,7 @@ NXSL_Value *Zone::createNXSLObject(NXSL_VM *vm)
 /**
  * Dump interface index to console
  */
-void Zone::dumpInterfaceIndex(CONSOLE_CTX console)
+void Zone::dumpInterfaceIndex(ServerConsole *console)
 {
    DumpIndex(console, m_idxInterfaceByAddr);
 }
@@ -527,7 +527,7 @@ void Zone::dumpInterfaceIndex(CONSOLE_CTX console)
 /**
  * Dump node index to console
  */
-void Zone::dumpNodeIndex(CONSOLE_CTX console)
+void Zone::dumpNodeIndex(ServerConsole *console)
 {
    DumpIndex(console, m_idxNodeByAddr);
 }
@@ -535,9 +535,32 @@ void Zone::dumpNodeIndex(CONSOLE_CTX console)
 /**
  * Dump subnet index to console
  */
-void Zone::dumpSubnetIndex(CONSOLE_CTX console)
+void Zone::dumpSubnetIndex(ServerConsole *console)
 {
    DumpIndex(console, m_idxSubnetByAddr);
+}
+
+/**
+ * Dump internal state to console
+ */
+void Zone::dumpState(ServerConsole *console)
+{
+   lockProperties();
+   if (!m_proxyNodes->isEmpty())
+   {
+      console->print(_T("   Proxies:\n"));
+      for(int i = 0; i < m_proxyNodes->size(); i++)
+      {
+         ZoneProxy *p = m_proxyNodes->get(i);
+         console->printf(_T("      [\x1b[33;1m%7u\x1b[0m] assignments=%u available=\x1b[%s\x1b[0m load=%f\n"), p->nodeId, p->assignments,
+                  p->isAvailable ? _T("32;1myes") : _T("31;1mno"), p->loadAverage);
+      }
+   }
+   else
+   {
+      console->print(_T("   No proxy nodes defined\n"));
+   }
+   unlockProperties();
 }
 
 /**

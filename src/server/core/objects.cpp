@@ -2189,7 +2189,9 @@ static void DumpObjectCallback(NetObj *object, void *data)
          PrintObjectInfo(console, object->getAssignedZoneProxyId(true), _T("   Backup zone proxy...:"));
          break;
       case OBJECT_SUBNET:
-         ConsolePrintf(console, _T("   IP address..........: %s/%d\n"), ((Subnet *)object)->getIpAddress().toString(dd->buffer), ((Subnet *)object)->getIpAddress().getMaskBits());
+         ConsolePrintf(console, _T("   IP address..........: %s/%d\n"),
+                  static_cast<Subnet*>(object)->getIpAddress().toString(dd->buffer),
+                  static_cast<Subnet*>(object)->getIpAddress().getMaskBits());
          break;
       case OBJECT_ACCESSPOINT:
          ConsolePrintf(console, _T("   IP address..........: %s\n"), ((AccessPoint *)object)->getIpAddress().toString(dd->buffer));
@@ -2204,7 +2206,12 @@ static void DumpObjectCallback(NetObj *object, void *data)
          break;
       case OBJECT_TEMPLATE:
          ConsolePrintf(console, _T("   Version.............: %d\n"),
-                       ((Template *)(object))->getVersion());
+                  static_cast<Template*>(object)->getVersion());
+         break;
+      case OBJECT_ZONE:
+         ConsolePrintf(console, _T("   UIN.................: %d\n"),
+                  static_cast<Zone*>(object)->getUIN());
+         static_cast<Zone*>(object)->dumpState(console);
          break;
    }
 }
