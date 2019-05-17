@@ -42,15 +42,24 @@ static DB_HANDLE s_db = NULL;
  */
 static BOOL H_UpgradeFromV7(int currVersion, int newVersion)
 {
-   CHK_EXEC(Query(_T("ALTER TABLE dc_config ADD proxy_id integer")));
+   CHK_EXEC(Query(_T("ALTER TABLE dc_config ADD backup_proxy_id integer")));
 
-   TCHAR upgradeQueries[] =
+   TCHAR createDcProxy[] =
             _T("CREATE TABLE dc_proxy (")
             _T("  server_id number(20) not null,")
             _T("  proxy_id integer not null,")
             _T("  ip_address varchar(48) not null,")
             _T("  PRIMARY KEY(server_id,proxy_id))");
-   CHK_EXEC(Query(upgradeQueries));
+   CHK_EXEC(Query(createDcProxy));
+
+   TCHAR createZoneConfig[] =
+            _T("CREATE TABLE zone_config (")
+            _T("  server_id number(20) not null,")
+            _T("  this_node_id integer not null,")
+            _T("  zone_uin integer not null,")
+            _T("  shared_secret varchar(32) not null,")
+            _T("  PRIMARY KEY(server_id))");
+   CHK_EXEC(Query(createZoneConfig));
 
    CHK_EXEC(WriteMetadata(_T("SchemaVersion"), 8));
    return TRUE;

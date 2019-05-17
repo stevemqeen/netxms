@@ -219,7 +219,7 @@ void DataCollectionItem::saveToDatabase(bool newObject)
    {
 		hStmt = DBPrepare(db,
                     _T("INSERT INTO dc_config (type,origin,name,polling_interval,")
-                    _T("last_poll,snmp_port,snmp_target_guid,snmp_raw_type,proxy_id,server_id,dci_id)")
+                    _T("last_poll,snmp_port,snmp_target_guid,snmp_raw_type,backup_proxy_id,server_id,dci_id)")
                     _T("VALUES (?,?,?,?,?,?,?,?,?,?,?)"));
    }
    else
@@ -227,7 +227,7 @@ void DataCollectionItem::saveToDatabase(bool newObject)
       hStmt = DBPrepare(db,
                     _T("UPDATE dc_config SET type=?,origin=?,name=?,")
                     _T("polling_interval=?,last_poll=?,snmp_port=?,")
-                    _T("snmp_target_guid=?,snmp_raw_type=?,proxy_id=? WHERE server_id=? AND dci_id=?"));
+                    _T("snmp_target_guid=?,snmp_raw_type=?,backup_proxy_id=? WHERE server_id=? AND dci_id=?"));
    }
 
 	if (hStmt == NULL)

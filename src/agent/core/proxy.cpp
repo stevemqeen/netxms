@@ -106,7 +106,28 @@ static void SaveProxyConfiguration(UINT64 serverId, HashMap<ProxyKey, DataCollec
    }
    DBFreeStatement(hStmt);
    delete it;
-   //TODO: save cfg to database
+
+   if(success)
+   {
+      _sntprintf(query, 256, _T("DELETE FROM zone_config WHERE server_id=") UINT64_FMT, serverId);
+      if (!DBQuery(hdb, query))
+      {
+         success = false;
+      }
+   }
+
+
+   if(success)
+   {
+      TCHAR sharedSecret[33];
+      BinToStr(zone->getSharedSecret(), ZONE_PROXY_KEY_LENGTH, sharedSecret);
+      _sntprintf(query, 256, _T("INSERT INTO zone_config (this_node_id,zone_uin,shared_secret,server_id) VALUES (%d,%d,'%s',") UINT64_FMT _T(")"),
+            zone->getThisNodeId(), zone->getZoneUIN(), sharedSecret, serverId);
+      if (!DBQuery(hdb, query))
+      {
+         success = false;
+      }
+   }
 
    if (success)
       DBCommit(hdb);
@@ -126,13 +147,29 @@ void LoadProxyConfiguration()
       int count = DBGetNumRows(hResult);
       for(int row = 0; row < count; row++)
       {
-         DataCollectionProxy *proxy = new DataCollectionProxy(DBGetFieldInt64(hResult, row, 0), DBGetFieldULong(hResult, row, 1), DBGetFieldInetAddr(hResult, row, 2));
+         DataCollectionProxy *proxy = new DataCollectionProxy(DBGetFieldInt64(hResult, row, 0), DBGetFieldULong(hResult, row, 1),
+               DBGetFieldInetAddr(hResult, row, 2));
          g_proxyList.set(proxy->getKey(), proxy);
       }
       DBFreeResult(hResult);
    }
 
-   //TODO: load cfg from database
+   hResult = DBSelect(hdb, _T("SELECT server_id,this_node_id,zone_uin,shared_secret FROM zone_config"));
+   if (hResult != NULL)
+   {
+      int count = DBGetNumRows(hResult);
+      for(int row = 0; row < count; row++)
+      {
+         TCHAR tmp[33];
+         DBGetField(hResult, row, 2, tmp, 33);
+         BYTE sharedSecret[ZONE_PROXY_KEY_LENGTH];
+         StrToBin(tmp, sharedSecret, ZONE_PROXY_KEY_LENGTH);
+         ZoneConfiguration *zone = new ZoneConfiguration(DBGetFieldInt64(hResult, row, 0), DBGetFieldULong(hResult, row, 1),
+               DBGetFieldULong(hResult, row, 2), sharedSecret);
+         g_proxyserverConfList->set(zone->getServerId(), zone);
+      }
+      DBFreeResult(hResult);
+   }
 }
 
 /**

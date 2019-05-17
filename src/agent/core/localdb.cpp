@@ -93,6 +93,13 @@ bool WriteMetadata(const TCHAR *name, INT32 value)
  */
 static const TCHAR *s_dbInitQueries[] =
 {
+   _T("CREATE TABLE zone_config (")
+   _T("  server_id number(20) not null,")
+   _T("  this_node_id integer not null,")
+   _T("  zone_uin integer not null,")
+   _T("  shared_secret varchar(32) not null,")
+   _T("  PRIMARY KEY(server_id))"),
+
    _T("CREATE TABLE dc_proxy (")
    _T("  server_id number(20) not null,")
    _T("  proxy_id integer not null,")
@@ -126,7 +133,7 @@ static const TCHAR *s_dbInitQueries[] =
    _T("  snmp_port integer not null,")
    _T("  snmp_target_guid varchar(36) not null,")
    _T("  snmp_raw_type integer not null,")
-   _T("  proxy_id integer null,")
+   _T("  backup_proxy_id integer null,")
    _T("  PRIMARY KEY(server_id,dci_id))"),
 
    _T("CREATE TABLE dc_queue (")
