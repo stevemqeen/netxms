@@ -182,6 +182,15 @@ DataCollectionProxy::DataCollectionProxy(const DataCollectionProxy *src)
 }
 
 /**
+ * Update from other object
+ */
+void DataCollectionProxy::update(const DataCollectionProxy *src)
+{
+   m_address = src->m_address;
+   m_inUse = src->m_inUse;
+}
+
+/**
  * Check if proxy is reachable
  */
 void DataCollectionProxy::checkConnection()
@@ -287,7 +296,7 @@ void UpdateProxyConfiguration(UINT64 serverId, HashMap<ProxyKey, DataCollectionP
       DataCollectionProxy *dcpOld = g_proxyList.get(dcpNew->getKey());
       if (dcpOld != NULL)
       {
-         dcpOld->setAddress(dcpNew->getAddress());
+         dcpOld->update(dcpNew);
       }
       else
       {

@@ -685,7 +685,7 @@ public:
    DataCollectionProxy(const DataCollectionProxy *src);
 
    void checkConnection();
-   void setAddress(const InetAddress &addr) { m_address = addr; }
+   void update(const DataCollectionProxy *src);
    void setInUse(bool inUse) { m_inUse = inUse; }
 
    ProxyKey getKey() const { return ProxyKey(m_serverId, m_proxyId); }

@@ -1,6 +1,6 @@
 /*
 ** NetXMS multiplatform core agent
-** Copyright (C) 2003-2018 Victor Kirhenshtein
+** Copyright (C) 2003-2019 Raden Solutions
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -93,7 +93,7 @@ public:
    int getSnmpRawValueType() const { return (int)m_snmpRawValueType; }
    UINT32 getPollingInterval() const { return (UINT32)m_pollingInterval; }
    time_t getLastPollTime() { return m_lastPollTime; }
-   UINT32 getProxyId() const { return m_backupProxyId; }
+   UINT32 getBackupProxyId() const { return m_backupProxyId; }
 
    bool equals(const DataCollectionItem *item) const { return (m_serverId == item->m_serverId) && (m_id == item->m_id); }
 
@@ -955,15 +955,15 @@ static UINT32 DataCollectionSchedulerRun()
       if (timeToPoll == 0)
       {
          bool schedule;
-         if (dci->getProxyId() == 0)
+         if (dci->getBackupProxyId() == 0)
          {
             schedule = true;
          }
          else
          {
             g_proxyListMutex.lock();
-            DataCollectionProxy *proxy = g_proxyList.get(ProxyKey(dci->getServerId(), dci->getProxyId()));
-            schedule = (proxy != NULL && !proxy->isConnected());
+            DataCollectionProxy *proxy = g_proxyList.get(ProxyKey(dci->getServerId(), dci->getBackupProxyId()));
+            schedule = ((proxy != NULL) && !proxy->isConnected());
             g_proxyListMutex.unlock();
          }
 
@@ -1091,6 +1091,7 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
             exist = true;
          }
       }
+
       if (!exist)
       {
          DataCollectionItem *newItem = new DataCollectionItem(item);
@@ -1102,18 +1103,18 @@ void ConfigureDataCollection(UINT64 serverId, NXCPMessage *msg)
          }
          newItem->saveToDatabase(true);
       }
-      //Update used proxies
-      if (item->getProxyId() > 0)
+
+      if (item->getBackupProxyId() != 0)
       {
-         DataCollectionProxy *proxy = proxyList->get(ProxyKey(serverId, item->getProxyId()));
+         DataCollectionProxy *proxy = proxyList->get(ProxyKey(serverId, item->getBackupProxyId()));
          if (proxy != NULL)
          {
             proxy->setInUse(true);
          }
          else
          {
-            DebugPrintf(4, _T("No proxy found for ") UINT64X_FMT(_T("016")) _T(" server, %d item id, %d proxy id"),
-                  serverId, item->getId(), item->getProxyId());
+            DebugPrintf(4, _T("No proxy found for ServerID=") UINT64X_FMT(_T("016")) _T(", ProxyID=%u, ItemID=%u"),
+                  serverId, item->getBackupProxyId(), item->getId());
          }
       }
    }
