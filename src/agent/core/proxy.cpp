@@ -410,3 +410,63 @@ THREAD_RESULT THREAD_CALL ProxyListenerThread(void *arg)
    listener.shutdown();
    return THREAD_OK;
 }
+
+/**
+ * Handler for Agent.ZoneProxies table
+ */
+LONG H_ZoneProxyies(const TCHAR *param, const TCHAR *arg, Table *value, AbstractCommSession *session)
+{
+   value->addColumn(_T("SERVER_ID"), DCI_DT_UINT64, _T("Server ID"), true);
+   value->addColumn(_T("PROXY_ID"), DCI_DT_UINT, _T("Proxy ID"), true);
+   value->addColumn(_T("ADDRESS"), DCI_DT_STRING, _T("Address"));
+   value->addColumn(_T("CONNECTED"), DCI_DT_STRING, _T("Connected"));
+   value->addColumn(_T("IN_USE"), DCI_DT_STRING, _T("In use"));
+
+   g_proxyListMutex.lock();
+   Iterator<DataCollectionProxy> *it = g_proxyList.iterator();
+   while(it->hasNext())
+   {
+      DataCollectionProxy *proxy = it->next();
+      value->addRow();
+      value->set(0, proxy->getServerId());
+      value->set(1, proxy->getProxyId());
+      value->set(2, proxy->getAddress().toString());
+      value->set(3, proxy->isConnected() ? _T("YES") : _T("NO"));
+      value->set(4, proxy->isInUse() ? _T("YES") : _T("NO"));
+   }
+   delete it;
+   g_proxyListMutex.unlock();
+
+   return SYSINFO_RC_SUCCESS;
+}
+
+/**
+ * Handler for Agent.ZoneConfigurations table
+ */
+LONG H_ZoneConfigurations(const TCHAR *param, const TCHAR *arg, Table *value, AbstractCommSession *session)
+{
+   value->addColumn(_T("SERVER_ID"), DCI_DT_UINT64, _T("Server ID"), true);
+   value->addColumn(_T("ZONE_UIN"), DCI_DT_UINT, _T("Zone UIN"));
+   value->addColumn(_T("LOCAL_ID"), DCI_DT_UINT, _T("Local ID"));
+   value->addColumn(_T("SECRET"), DCI_DT_STRING, _T("Secret"));
+
+   g_proxyListMutex.lock();
+   Iterator<ZoneConfiguration> *it = g_proxyserverConfList->iterator();
+   while(it->hasNext())
+   {
+      ZoneConfiguration *zone = it->next();
+      value->addRow();
+      value->set(0, zone->getServerId());
+      value->set(1, zone->getZoneUIN());
+      value->set(2, zone->getThisNodeId());
+      if (session->isMasterServer())
+      {
+         TCHAR text[ZONE_PROXY_KEY_LENGTH * 2 + 1];
+         value->set(3, BinToStr(zone->getSharedSecret(), ZONE_PROXY_KEY_LENGTH, text));
+      }
+   }
+   delete it;
+   g_proxyListMutex.unlock();
+
+   return SYSINFO_RC_SUCCESS;
+}

@@ -572,6 +572,8 @@ struct PolicyChangeNotification
 
 #define DCTDESC_AGENT_SESSION_AGENTS                 _T("Registered session agents")
 #define DCTDESC_AGENT_SUBAGENTS                      _T("Loaded subagents")
+#define DCTDESC_AGENT_ZONE_CONFIGURATIONS            _T("Loaded zone configurations")
+#define DCTDESC_AGENT_ZONE_PROXIES                   _T("Zone proxies")
 #define DCTDESC_FILESYSTEM_VOLUMES                   _T("File system volumes")
 #define DCTDESC_HARDWARE_BATTERIES                   _T("Hardware: batteries")
 #define DCTDESC_HARDWARE_MEMORY_DEVICES              _T("Hardware: memory devices")
