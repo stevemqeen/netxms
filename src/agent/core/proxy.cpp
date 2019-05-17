@@ -414,7 +414,7 @@ THREAD_RESULT THREAD_CALL ProxyListenerThread(void *arg)
 /**
  * Handler for Agent.ZoneProxies table
  */
-LONG H_ZoneProxyies(const TCHAR *param, const TCHAR *arg, Table *value, AbstractCommSession *session)
+LONG H_ZoneProxies(const TCHAR *param, const TCHAR *arg, Table *value, AbstractCommSession *session)
 {
    value->addColumn(_T("SERVER_ID"), DCI_DT_UINT64, _T("Server ID"), true);
    value->addColumn(_T("PROXY_ID"), DCI_DT_UINT, _T("Proxy ID"), true);

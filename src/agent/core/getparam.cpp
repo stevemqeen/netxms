@@ -462,8 +462,8 @@ static NETXMS_SUBAGENT_TABLE m_stdTables[] =
 {
    { _T("Agent.SessionAgents"), H_SessionAgents, NULL, _T("SESSION_ID"), DCTDESC_AGENT_SESSION_AGENTS },
    { _T("Agent.SubAgents"), H_SubAgentTable, NULL, _T("NAME"), DCTDESC_AGENT_SUBAGENTS },
-   { _T("Agent.ZoneConfigurations"), H_SubAgentTable, NULL, _T("SERVER_ID"), DCTDESC_AGENT_ZONE_CONFIGURATIONS },
-   { _T("Agent.ZoneProxies"), H_SubAgentTable, NULL, _T("SERVER_ID,PROXY_ID"), DCTDESC_AGENT_ZONE_PROXIES }
+   { _T("Agent.ZoneConfigurations"), H_ZoneConfigurations, NULL, _T("SERVER_ID"), DCTDESC_AGENT_ZONE_CONFIGURATIONS },
+   { _T("Agent.ZoneProxies"), H_ZoneProxies, NULL, _T("SERVER_ID,PROXY_ID"), DCTDESC_AGENT_ZONE_PROXIES }
 };
 
 /**
