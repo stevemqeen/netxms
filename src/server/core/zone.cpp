@@ -329,14 +329,26 @@ void Zone::removeFromIndex(Interface *iface)
 }
 
 /**
+ * Callback for processing zone configuration synchronization
+ */
+static EnumerationCallbackResult ForceConfigurationSync(const UINT32 *nodeId, void *arg)
+{
+   Node *node = static_cast<Node*>(FindObjectById(*nodeId, OBJECT_NODE));
+   if (node != NULL)
+      node->forceSyncDataCollectionConfig();
+   return _CONTINUE;
+}
+
+/**
  * Get proxy node for given object. Always prefers proxy that is already assigned to the object
  * and will update assigned proxy property if changed.
  */
 UINT32 Zone::getProxyNodeId(NetObj *object, bool backup)
 {
-   lockProperties();
-
    ZoneProxy *proxy = NULL;
+   HashSet<UINT32> syncSet;
+
+   lockProperties();
 
    if ((object != NULL) && (object->getAssignedZoneProxyId(backup) != 0))
    {
@@ -352,6 +364,11 @@ UINT32 Zone::getProxyNodeId(NetObj *object, bool backup)
             else
             {
                p->assignments--;
+               syncSet.put(p->nodeId);
+
+               UINT32 otherProxy = object->getAssignedZoneProxyId(!backup);
+               if (otherProxy != 0)
+                  syncSet.put(otherProxy);
             }
             break;
          }
@@ -379,11 +396,15 @@ UINT32 Zone::getProxyNodeId(NetObj *object, bool backup)
       }
       if (object != NULL)
       {
-         object->setAssignedZoneProxyId((proxy != NULL) ? proxy->nodeId : 0, backup);
          if (proxy != NULL)
          {
             object->setAssignedZoneProxyId(proxy->nodeId, backup);
             proxy->assignments++;
+            syncSet.put(proxy->nodeId);
+
+            UINT32 otherProxy = object->getAssignedZoneProxyId(!backup);
+            if (otherProxy != 0)
+               syncSet.put(otherProxy);
          }
          else
          {
@@ -399,6 +420,8 @@ UINT32 Zone::getProxyNodeId(NetObj *object, bool backup)
             m_name, m_uin);
 
    unlockProperties();
+
+   syncSet.forEach(ForceConfigurationSync, NULL);
    return id;
 }
 

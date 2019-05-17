@@ -8616,7 +8616,7 @@ void Node::clearDataCollectionConfigFromAgent(AgentConnectionEx *conn)
  */
 void Node::onDataCollectionChangeAsyncCallback(void *arg)
 {
-   Node *node = (Node *)arg;
+   Node *node = static_cast<Node*>(arg);
    node->agentLock();
    bool newConnection;
    if (node->connectToAgent(NULL, NULL, &newConnection))
@@ -8639,13 +8639,25 @@ void Node::onDataCollectionChange()
       ThreadPoolExecute(g_mainThreadPool, Node::onDataCollectionChangeAsyncCallback, this);
    }
 
-   UINT32 snmpProxyId = getEffectiveSnmpProxy();
+   UINT32 snmpProxyId = getEffectiveSnmpProxy(false);
    if (snmpProxyId != 0)
    {
       Node *snmpProxy = (Node *)FindObjectById(snmpProxyId, OBJECT_NODE);
       if (snmpProxy != NULL)
       {
          DbgPrintf(5, _T("Node::onDataCollectionChange(%s [%d]): executing data collection sync for SNMP proxy %s [%d]"),
+                   m_name, m_id, snmpProxy->getName(), snmpProxy->getId());
+         ThreadPoolExecute(g_mainThreadPool, Node::onDataCollectionChangeAsyncCallback, snmpProxy);
+      }
+   }
+
+   snmpProxyId = getEffectiveSnmpProxy(true);
+   if (snmpProxyId != 0)
+   {
+      Node *snmpProxy = (Node *)FindObjectById(snmpProxyId, OBJECT_NODE);
+      if (snmpProxy != NULL)
+      {
+         DbgPrintf(5, _T("Node::onDataCollectionChange(%s [%d]): executing data collection sync for backup SNMP proxy %s [%d]"),
                    m_name, m_id, snmpProxy->getName(), snmpProxy->getId());
          ThreadPoolExecute(g_mainThreadPool, Node::onDataCollectionChangeAsyncCallback, snmpProxy);
       }
