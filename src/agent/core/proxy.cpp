@@ -425,7 +425,7 @@ THREAD_RESULT THREAD_CALL ProxyListenerThread(void *arg)
  */
 LONG H_ZoneProxies(const TCHAR *param, const TCHAR *arg, Table *value, AbstractCommSession *session)
 {
-   value->addColumn(_T("SERVER_ID"), DCI_DT_UINT64, _T("Server ID"), true);
+   value->addColumn(_T("SERVER_ID"), DCI_DT_STRING, _T("Server ID"), true);
    value->addColumn(_T("PROXY_ID"), DCI_DT_UINT, _T("Proxy ID"), true);
    value->addColumn(_T("ADDRESS"), DCI_DT_STRING, _T("Address"));
    value->addColumn(_T("CONNECTED"), DCI_DT_STRING, _T("Connected"));
@@ -436,8 +436,12 @@ LONG H_ZoneProxies(const TCHAR *param, const TCHAR *arg, Table *value, AbstractC
    while(it->hasNext())
    {
       DataCollectionProxy *proxy = it->next();
+
+      TCHAR serverId[20];
+      _sntprintf(serverId, 20, UINT64X_FMT(_T("016")), proxy->getServerId());
+
       value->addRow();
-      value->set(0, proxy->getServerId());
+      value->set(0, serverId);
       value->set(1, proxy->getProxyId());
       value->set(2, proxy->getAddress().toString());
       value->set(3, proxy->isConnected() ? _T("YES") : _T("NO"));
@@ -454,7 +458,7 @@ LONG H_ZoneProxies(const TCHAR *param, const TCHAR *arg, Table *value, AbstractC
  */
 LONG H_ZoneConfigurations(const TCHAR *param, const TCHAR *arg, Table *value, AbstractCommSession *session)
 {
-   value->addColumn(_T("SERVER_ID"), DCI_DT_UINT64, _T("Server ID"), true);
+   value->addColumn(_T("SERVER_ID"), DCI_DT_STRING, _T("Server ID"), true);
    value->addColumn(_T("ZONE_UIN"), DCI_DT_UINT, _T("Zone UIN"));
    value->addColumn(_T("LOCAL_ID"), DCI_DT_UINT, _T("Local ID"));
    value->addColumn(_T("SECRET"), DCI_DT_STRING, _T("Secret"));
@@ -464,8 +468,12 @@ LONG H_ZoneConfigurations(const TCHAR *param, const TCHAR *arg, Table *value, Ab
    while(it->hasNext())
    {
       ZoneConfiguration *zone = it->next();
+
+      TCHAR serverId[20];
+      _sntprintf(serverId, 20, UINT64X_FMT(_T("016")), zone->getServerId());
+
       value->addRow();
-      value->set(0, zone->getServerId());
+      value->set(0, serverId);
       value->set(1, zone->getZoneUIN());
       value->set(2, zone->getThisNodeId());
       if (session->isMasterServer())
