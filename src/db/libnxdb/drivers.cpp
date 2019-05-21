@@ -29,6 +29,11 @@ UINT32 g_logMsgCode = 0;
 UINT32 g_sqlErrorMsgCode = 0;
 
 /**
+ * Is reconnect operations aborted
+ */
+BOOL g_isReconnectAborted = false;
+
+/**
  * Long-running query threshold
  */
 UINT32 g_sqlQueryExecTimeThreshold = 0xFFFFFFFF;
@@ -213,6 +218,7 @@ DB_DRIVER LIBNXDB_EXPORTABLE DBLoadDriver(const TCHAR *module, const TCHAR *init
    driver->m_fpDrvGetColumnNameUnbuffered = (const char* (*)(DBDRV_UNBUFFERED_RESULT, int))DLGetSymbolAddrEx(driver->m_handle, "DrvGetColumnNameUnbuffered");
    driver->m_fpDrvFreeResult = (void (*)(DBDRV_RESULT))DLGetSymbolAddrEx(driver->m_handle, "DrvFreeResult");
    driver->m_fpDrvFreeUnbufferedResult = (void (*)(DBDRV_UNBUFFERED_RESULT))DLGetSymbolAddrEx(driver->m_handle, "DrvFreeUnbufferedResult");
+   driver->m_fpDrvFetchFreeResult = (void (*)(DBDRV_UNBUFFERED_RESULT))DLGetSymbolAddrEx(driver->m_handle, "DrvFetchFreeResult");
    driver->m_fpDrvBegin = (DWORD (*)(DBDRV_CONNECTION))DLGetSymbolAddrEx(driver->m_handle, "DrvBegin");
    driver->m_fpDrvCommit = (DWORD (*)(DBDRV_CONNECTION))DLGetSymbolAddrEx(driver->m_handle, "DrvCommit");
    driver->m_fpDrvRollback = (DWORD (*)(DBDRV_CONNECTION))DLGetSymbolAddrEx(driver->m_handle, "DrvRollback");
@@ -231,7 +237,8 @@ DB_DRIVER LIBNXDB_EXPORTABLE DBLoadDriver(const TCHAR *module, const TCHAR *init
 		 (driver->m_fpDrvGetColumnCount == NULL) || (driver->m_fpDrvGetColumnName == NULL) ||
 		 (driver->m_fpDrvGetColumnCountUnbuffered == NULL) || (driver->m_fpDrvGetColumnNameUnbuffered == NULL) ||
        (driver->m_fpDrvGetFieldLength == NULL) || (driver->m_fpDrvGetFieldLengthUnbuffered == NULL) ||
-		 (driver->m_fpDrvPrepareStringA == NULL) || (driver->m_fpDrvPrepareStringW == NULL) || (driver->m_fpDrvIsTableExist == NULL))
+		 (driver->m_fpDrvPrepareStringA == NULL) || (driver->m_fpDrvPrepareStringW == NULL) || (driver->m_fpDrvIsTableExist == NULL) ||
+       (driver->m_fpDrvFetchFreeResult == NULL))
    {
       if (s_writeLog)
          __DBWriteLog(EVENTLOG_ERROR_TYPE, _T("Unable to find all required entry points in database driver \"%s\""), module);

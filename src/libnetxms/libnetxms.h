@@ -37,5 +37,9 @@
 
 void SEHInit(void);
 
+/**
+ * Global variables
+ */
+extern int g_stringMaxBuffer;
 
 #endif   /* _libnetxms_h_ */

@@ -125,6 +125,7 @@ void LIBNXDB_EXPORTABLE DBDisconnect(DB_HANDLE hConn);
 void LIBNXDB_EXPORTABLE DBEnableReconnect(DB_HANDLE hConn, bool enabled);
 bool LIBNXDB_EXPORTABLE DBSetPrefetchLimit(DB_HANDLE hConn, int limit);
 void LIBNXDB_EXPORTABLE DBSetSessionInitCallback(void (*cb)(DB_HANDLE));
+bool LIBNXDB_EXPORTABLE DBCheckConnection(DB_HANDLE hConn, const TCHAR *szQuery);
 DB_DRIVER LIBNXDB_EXPORTABLE DBGetDriver(DB_HANDLE hConn);
 
 DB_STATEMENT LIBNXDB_EXPORTABLE DBPrepare(DB_HANDLE hConn, const TCHAR *szQuery, bool optimizeForReuse = false);
@@ -182,6 +183,7 @@ uuid LIBNXDB_EXPORTABLE DBGetFieldGUID(DB_RESULT hResult, int iRow, int iColumn)
 
 DB_UNBUFFERED_RESULT LIBNXDB_EXPORTABLE DBSelectUnbuffered(DB_HANDLE hConn, const TCHAR *szQuery);
 DB_UNBUFFERED_RESULT LIBNXDB_EXPORTABLE DBSelectUnbufferedEx(DB_HANDLE hConn, const TCHAR *szQuery, TCHAR *errorText);
+void LIBNXDB_EXPORTABLE DBFetchFreeResult(DB_UNBUFFERED_RESULT hResult);
 bool LIBNXDB_EXPORTABLE DBFetch(DB_UNBUFFERED_RESULT hResult);
 int LIBNXDB_EXPORTABLE DBGetColumnCount(DB_UNBUFFERED_RESULT hResult);
 bool LIBNXDB_EXPORTABLE DBGetColumnName(DB_UNBUFFERED_RESULT hResult, int column, TCHAR *buffer, int bufSize);
@@ -236,6 +238,7 @@ int LIBNXDB_EXPORTABLE DBConnectionPoolGetSize();
 int LIBNXDB_EXPORTABLE DBConnectionPoolGetAcquiredCount();
 
 void LIBNXDB_EXPORTABLE DBSetLongRunningThreshold(UINT32 threshold);
+void LIBNXDB_EXPORTABLE DBAbortReconnect();
 ObjectArray<PoolConnectionInfo> LIBNXDB_EXPORTABLE *DBConnectionPoolGetConnectionList();
 void LIBNXDB_EXPORTABLE DBGetPerfCounters(LIBNXDB_PERF_COUNTERS *counters);
 

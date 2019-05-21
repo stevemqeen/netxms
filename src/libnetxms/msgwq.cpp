@@ -387,6 +387,9 @@ THREAD_RESULT THREAD_CALL MsgWaitQueue::housekeeperThread(void *arg)
       MutexLock(m_housekeeperLock);
       m_activeQueues->forEach(MsgWaitQueue::houseKeeperCallback, NULL);
       MutexUnlock(m_housekeeperLock);
+#ifdef _AIX
+      sleep(1);
+#endif
    }
    return THREAD_OK;
 }

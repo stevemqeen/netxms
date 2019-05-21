@@ -168,10 +168,28 @@ void LIBNXDB_EXPORTABLE DBEnableReconnect(DB_HANDLE hConn, bool enabled)
 }
 
 /**
+ * Check if database is alive
+ */
+bool LIBNXDB_EXPORTABLE DBCheckConnection(DB_HANDLE hConn, const TCHAR *szQuery)
+{
+   bool result = true;
+
+   MutexLock(hConn->m_mutexTransLock);
+   DWORD dwResult = hConn->m_driver->m_fpDrvQuery(hConn->m_connection, szQuery, NULL);
+   if ((dwResult == DBERR_CONNECTION_LOST))
+      result = false;
+
+   MutexUnlock(hConn->m_mutexTransLock);
+
+   return result;
+}
+
+/**
  * Reconnect to database
  */
-static void DBReconnect(DB_HANDLE hConn)
+static bool DBReconnect(DB_HANDLE hConn)
 {
+   bool result = false;
    int nCount;
 	WCHAR errorText[DBDRV_MAX_ERROR_TEXT];
 
@@ -189,6 +207,7 @@ static void DBReconnect(DB_HANDLE hConn)
             hConn->m_driver->m_fpDrvSetPrefetchLimit(hConn->m_connection, hConn->m_driver->m_defaultPrefetchLimit);
          if (s_sessionInitCb != NULL)
             s_sessionInitCb(hConn);
+         result = true;
          break;
       }
       if (nCount == 0)
@@ -198,6 +217,12 @@ static void DBReconnect(DB_HANDLE hConn)
 				hConn->m_driver->m_fpEventHandler(DBEVENT_CONNECTION_LOST, NULL, NULL, true, hConn->m_driver->m_userArg);
          hConn->m_driver->m_reconnect++;
          MutexUnlock(hConn->m_driver->m_mutexReconnect);
+      }
+
+      if (g_isReconnectAborted)
+      {
+         nxlog_debug(4, _T("DB reconnect: aborted"));
+         break;
       }
       ThreadSleepMs(1000);
    }
@@ -209,6 +234,8 @@ static void DBReconnect(DB_HANDLE hConn)
 			hConn->m_driver->m_fpEventHandler(DBEVENT_CONNECTION_RESTORED, NULL, NULL, false, hConn->m_driver->m_userArg);
       MutexUnlock(hConn->m_driver->m_mutexReconnect);
    }
+
+   return result;
 }
 
 /**
@@ -250,6 +277,9 @@ void LIBNXDB_EXPORTABLE DBSetSessionInitCallback(void (*cb)(DB_HANDLE))
  */
 bool LIBNXDB_EXPORTABLE DBQueryEx(DB_HANDLE hConn, const TCHAR *szQuery, TCHAR *errorText)
 {
+   if (!IS_VALID_STATEMENT_HANDLE(hConn))
+      return false;
+
    DWORD dwResult;
 #ifdef UNICODE
 #define pwszQuery szQuery
@@ -265,8 +295,8 @@ bool LIBNXDB_EXPORTABLE DBQueryEx(DB_HANDLE hConn, const TCHAR *szQuery, TCHAR *
    dwResult = hConn->m_driver->m_fpDrvQuery(hConn->m_connection, pwszQuery, wcErrorText);
    if ((dwResult == DBERR_CONNECTION_LOST) && hConn->m_reconnectEnabled)
    {
-      DBReconnect(hConn);
-      dwResult = hConn->m_driver->m_fpDrvQuery(hConn->m_connection, pwszQuery, wcErrorText);
+      if (DBReconnect(hConn))
+         dwResult = hConn->m_driver->m_fpDrvQuery(hConn->m_connection, pwszQuery, wcErrorText);
    }
 
    s_perfNonSelectQueries++;
@@ -319,6 +349,9 @@ bool LIBNXDB_EXPORTABLE DBQuery(DB_HANDLE hConn, const TCHAR *query)
  */
 DB_RESULT LIBNXDB_EXPORTABLE DBSelectEx(DB_HANDLE hConn, const TCHAR *szQuery, TCHAR *errorText)
 {
+   if (!IS_VALID_STATEMENT_HANDLE(hConn))
+      return NULL;
+
    DBDRV_RESULT hResult;
 	DB_RESULT result = NULL;
    DWORD dwError = DBERR_OTHER_ERROR;
@@ -339,8 +372,8 @@ DB_RESULT LIBNXDB_EXPORTABLE DBSelectEx(DB_HANDLE hConn, const TCHAR *szQuery, T
    hResult = hConn->m_driver->m_fpDrvSelect(hConn->m_connection, pwszQuery, &dwError, wcErrorText);
    if ((hResult == NULL) && (dwError == DBERR_CONNECTION_LOST) && hConn->m_reconnectEnabled)
    {
-      DBReconnect(hConn);
-      hResult = hConn->m_driver->m_fpDrvSelect(hConn->m_connection, pwszQuery, &dwError, wcErrorText);
+      if (DBReconnect(hConn))
+         hResult = hConn->m_driver->m_fpDrvSelect(hConn->m_connection, pwszQuery, &dwError, wcErrorText);
    }
 
    ms = GetCurrentTimeMs() - ms;
@@ -831,8 +864,8 @@ DB_UNBUFFERED_RESULT LIBNXDB_EXPORTABLE DBSelectUnbufferedEx(DB_HANDLE hConn, co
    hResult = hConn->m_driver->m_fpDrvSelectUnbuffered(hConn->m_connection, pwszQuery, &dwError, wcErrorText);
    if ((hResult == NULL) && (dwError == DBERR_CONNECTION_LOST) && hConn->m_reconnectEnabled)
    {
-      DBReconnect(hConn);
-      hResult = hConn->m_driver->m_fpDrvSelectUnbuffered(hConn->m_connection, pwszQuery, &dwError, wcErrorText);
+      if (DBReconnect(hConn))
+         hResult = hConn->m_driver->m_fpDrvSelectUnbuffered(hConn->m_connection, pwszQuery, &dwError, wcErrorText);
    }
 
    ms = GetCurrentTimeMs() - ms;
@@ -1119,6 +1152,14 @@ uuid LIBNXDB_EXPORTABLE DBGetFieldGUID(DB_UNBUFFERED_RESULT hResult, int iColumn
 }
 
 /**
+ * Fretch free result
+ */
+void LIBNXDB_EXPORTABLE DBFetchFreeResult(DB_UNBUFFERED_RESULT hResult)
+{
+   hResult->m_driver->m_fpDrvFetchFreeResult(hResult->m_data);
+}
+
+/**
  * Free unbuffered SELECT result
  */
 void LIBNXDB_EXPORTABLE DBFreeResult(DB_UNBUFFERED_RESULT hResult)
@@ -1133,6 +1174,9 @@ void LIBNXDB_EXPORTABLE DBFreeResult(DB_UNBUFFERED_RESULT hResult)
  */
 DB_STATEMENT LIBNXDB_EXPORTABLE DBPrepareEx(DB_HANDLE hConn, const TCHAR *query, bool optimizeForReuse, TCHAR *errorText)
 {
+   if (!IS_VALID_STATEMENT_HANDLE(hConn))
+      return NULL;
+
 	DB_STATEMENT result = NULL;
 	INT64 ms;
 
@@ -1153,8 +1197,8 @@ DB_STATEMENT LIBNXDB_EXPORTABLE DBPrepareEx(DB_HANDLE hConn, const TCHAR *query,
 	DBDRV_STATEMENT stmt = hConn->m_driver->m_fpDrvPrepare(hConn->m_connection, pwszQuery, optimizeForReuse, &errorCode, wcErrorText);
    if ((stmt == NULL) && (errorCode == DBERR_CONNECTION_LOST) && hConn->m_reconnectEnabled)
    {
-      DBReconnect(hConn);
-		stmt = hConn->m_driver->m_fpDrvPrepare(hConn->m_connection, pwszQuery, optimizeForReuse, &errorCode, wcErrorText);
+      if (DBReconnect(hConn))
+         stmt = hConn->m_driver->m_fpDrvPrepare(hConn->m_connection, pwszQuery, optimizeForReuse, &errorCode, wcErrorText);
 	}
    MutexUnlock(hConn->m_mutexTransLock);
 
@@ -1729,8 +1773,8 @@ bool LIBNXDB_EXPORTABLE DBBegin(DB_HANDLE hConn)
       dwResult = hConn->m_driver->m_fpDrvBegin(hConn->m_connection);
       if ((dwResult == DBERR_CONNECTION_LOST) && hConn->m_reconnectEnabled)
       {
-         DBReconnect(hConn);
-         dwResult = hConn->m_driver->m_fpDrvBegin(hConn->m_connection);
+         if (DBReconnect(hConn))
+            dwResult = hConn->m_driver->m_fpDrvBegin(hConn->m_connection);
       }
       if (dwResult == DBERR_SUCCESS)
       {

@@ -21,12 +21,15 @@
 **/
 
 #include "libnxcc.h"
+#include <nxdbapi.h>
 
 /**
  * Externals
  */
 void ClusterNodeJoin(void *arg);
 void ProcessClusterJoinRequest(ClusterNodeInfo *node, NXCPMessage *msg);
+bool ClusterGetNodeStateFromDB(ClusterNodeInfo *node);
+static THREAD_RESULT THREAD_CALL DatabaseUpdateTimestampThread(void *arg);
 
 /**
  * Keepalive interval
@@ -39,6 +42,7 @@ void ProcessClusterJoinRequest(ClusterNodeInfo *node, NXCPMessage *msg);
 static THREAD s_listenerThread = INVALID_THREAD_HANDLE;
 static THREAD s_connectorThread = INVALID_THREAD_HANDLE;
 static THREAD s_keepaliveThread = INVALID_THREAD_HANDLE;
+static THREAD s_databaseTimeThread = INVALID_THREAD_HANDLE;
 
 /**
  * Command ID
@@ -242,8 +246,14 @@ void ChangeClusterNodeState(ClusterNodeInfo *node, ClusterNodeState state)
          g_nxccEventHandler->onNodeDisconnect(node->m_id);
          if (node->m_master)
          {
-            node->m_master = false;
-            PromoteClusterNode();
+            bool node_status = ClusterGetNodeStateFromDB(node);
+            ClusterDebug(5, _T("Cluster node %d [%s] state from database is %s"), node->m_id, (const TCHAR *)node->m_addr->toString(), node_status ? _T("UP") : _T("DOWN"));
+
+            if(!node_status)
+            {
+               node->m_master = false;
+               PromoteClusterNode();
+            }
          }
          break;
       case CLUSTER_NODE_SYNC:
@@ -636,15 +646,15 @@ NXCPMessage LIBNXCC_EXPORTABLE *ClusterSendDirectCommandEx(UINT32 nodeId, NXCPMe
    msg->setId(requestId);
    NXCP_MESSAGE *rawMsg = msg->serialize();
 
-   TCHAR buffer[64];
-   ClusterDebug(7, _T("ClusterSendDirectCommandEx: sending message %s (%d) to peer %d [%s]"),
-                NXCPMessageCodeName(msg->getCode(), buffer), msg->getId(),
-                node->m_id, (const TCHAR *)node->m_addr->toString());
-
    bool sent = false;
    MutexLock(node->m_mutex);
    if (node->m_socket != INVALID_SOCKET)
    {
+      TCHAR buffer[64];
+      ClusterDebug(7, _T("ClusterSendDirectCommandEx: sending message %s (%d) to peer %d [%s]"),
+         NXCPMessageCodeName(msg->getCode(), buffer), msg->getId(),
+         node->m_id, (const TCHAR *)node->m_addr->toString());
+
       if (SendEx(node->m_socket, rawMsg, ntohl(rawMsg->size), 0, NULL) > 0)
       {
          sent = true;
@@ -659,7 +669,7 @@ NXCPMessage LIBNXCC_EXPORTABLE *ClusterSendDirectCommandEx(UINT32 nodeId, NXCPMe
    }
    else
    {
-      ClusterDebug(5, _T("ClusterDirectCommand: send failed for peer %d [%s]"), nodeId, (const TCHAR *)node->m_addr->toString());
+      ClusterDebug(5, _T("ClusterDirectCommand: send failed for peer %d"), nodeId);
    }
    MutexUnlock(node->m_mutex);
 
@@ -783,6 +793,7 @@ bool LIBNXCC_EXPORTABLE ClusterJoin()
    s_listenerThread = ThreadCreateEx(ClusterListenerThread, 0, CAST_TO_POINTER(s, void *));
    s_connectorThread = ThreadCreateEx(ClusterConnectorThread, 0, NULL);
    s_keepaliveThread = ThreadCreateEx(ClusterKeepaliveThread, 0, NULL);
+   s_databaseTimeThread = ThreadCreateEx(DatabaseUpdateTimestampThread, 0, NULL);
 
    ClusterDebug(1, _T("ClusterJoin: waiting for other nodes"));
    if (ConditionWait(s_joinCondition, 60000))  // wait 1 minute for other nodes to join
@@ -807,6 +818,7 @@ void ClusterDisconnect()
    ThreadJoin(s_listenerThread);
    ThreadJoin(s_connectorThread);
    ThreadJoin(s_keepaliveThread);
+   ThreadJoin(s_databaseTimeThread);
 }
 
 /**
@@ -816,4 +828,79 @@ void LIBNXCC_EXPORTABLE ClusterSetRunning()
 {
    g_nxccNeedSync = false;
    ClusterNotify(CN_NODE_RUNNING);
+}
+
+/**
+ * Get node state from database table
+ */
+bool ClusterGetNodeStateFromDB(ClusterNodeInfo *node)
+{
+   bool result = false;
+   UINT32 node_id = node->m_id;
+
+   DB_HANDLE hdb = DBConnectionPoolAcquireConnection();
+   TCHAR query[256];
+
+   _sntprintf(query, 256, _T("SELECT VAR_NAME, VAR_VALUE FROM config WHERE ")
+      _T("VAR_NAME='DBLockInfo.%d' OR ")
+      _T("VAR_NAME='DBLockPID.%d' OR ")
+      _T("VAR_NAME='DBLockStatus.%d' OR ")
+      _T("VAR_NAME='DBLockTimestamp.%d' ORDER BY VAR_NAME ASC"),
+      node_id, node_id, node_id, node_id);
+   DB_RESULT hResult = DBSelect(hdb, query);
+
+   if(hResult != NULL)
+   {
+      if (DBGetNumRows(hResult) >= 3)
+      {
+         TCHAR lockinfo[255], lockpid[255], lockstatus[255];
+         INT32 locktime;
+         DBGetField(hResult, 0, 1, lockinfo, 255);
+         DBGetField(hResult, 1, 1, lockpid, 255);
+         DBGetField(hResult, 2, 1, lockstatus, 255);
+         locktime = DBGetFieldLong(hResult, 3, 1);
+
+         if (_tcscmp(_T("#00"), lockinfo) || _tcscmp(_T("0"), lockpid) || _tcscmp(_T("UNLOCKED"), lockstatus))
+         {
+            // if lock time is not updated more than 60 seconds, seems that server is not running
+            if (locktime > 0 && locktime - time(NULL) < 60)
+            {
+               result = true;
+            }
+         }
+      }
+      DBFreeResult(hResult);
+   }
+   DBConnectionPoolReleaseConnection(hdb);
+
+   return result;
+}
+
+/**
+ * Cluster keepalive thread
+ */
+static THREAD_RESULT THREAD_CALL DatabaseUpdateTimestampThread(void *arg)
+{
+   ClusterDebug(1, _T("Database update timestamp thread started"));
+
+   while(!g_nxccShutdown)
+   {
+      ThreadSleepMs(g_nxccDBUpdateTimeout * 1000);
+      if (g_nxccShutdown)
+         break;
+
+      DB_HANDLE hdb = DBConnectionPoolAcquireConnection();
+
+      TCHAR query[1024];
+      _sntprintf(query, 1024, _T("UPDATE CONFIG SET VAR_VALUE=%d WHERE VAR_NAME='DBLockTimestamp.%d'"), time(NULL), g_nxccNodeId);
+      if (!DBQuery(hdb, query))
+      {
+         ClusterDebug(1, _T("Database update timestamp failed on update. [%d]"), g_nxccNodeId);
+      }
+
+      DBConnectionPoolReleaseConnection(hdb);
+   }
+
+   ClusterDebug(1, _T("Database update timestamp thread stopped"));
+   return THREAD_OK;
 }
