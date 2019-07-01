@@ -718,7 +718,7 @@ extern "C" void __EXPORT DrvFreeResult(INFORMIX_QUERY_RESULT *pResult)
 /**
  * Perform unbuffered SELECT query
  */
-extern "C" DBDRV_UNBUFFERED_RESULT __EXPORT DrvSelectUnbuffered(INFORMIX_CONN *pConn, WCHAR *pwszQuery, DWORD *pdwError, WCHAR *errorText)
+extern "C" DBDRV_UNBUFFERED_RESULT __EXPORT DrvSelectUnbuffered(INFORMIX_CONN *pConn, WCHAR *pwszQuery, DWORD *pdwError, WCHAR *errorText, UINT32 mode)
 {
 	INFORMIX_UNBUFFERED_QUERY_RESULT *pResult = NULL;
 	long iResult;
