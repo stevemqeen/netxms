@@ -229,7 +229,7 @@ extern "C" DBDRV_CONNECTION __EXPORT DrvConnect(const char *host, const char *lo
 		    pConn->lastErrorText[0] = 0;
 		    pConn->prefetchLimit = 0;
 
-		    OCI_SetStatementCacheSize(pConn->handleConnection, pConn->prefetchLimit);
+		    OCI_SetStatementCacheSize(pConn->handleConnection, 0);
 
  		    DrvQueryInternal(pConn, _T("ALTER SESSION SET NLS_LANGUAGE='AMERICAN' NLS_NUMERIC_CHARACTERS='.,'"), NULL);
  		    nxlog_debug(5, _T("ORACLE: connected to %i.%i.%i"), OCI_GetServerMajorVersion(OCIConn), OCI_GetServerMinorVersion(OCIConn), OCI_GetServerRevisionVersion(OCIConn));
@@ -1068,6 +1068,10 @@ static ORACLE_RESULT *ProcessQueryResults(ORACLE_CONN *pConn, OCI_Statement *han
 							memcpy(pResult->pData[nPos], result, length);
 #endif
 							pResult->pData[nPos][length] = 0;
+						}
+
+						if (NULL != result)
+						{
 							free(result);
 						}
 					}
@@ -1098,7 +1102,7 @@ extern "C" DBDRV_RESULT __EXPORT DrvSelect(ORACLE_CONN *pConn, WCHAR *pwszQuery,
 {
 	ORACLE_RESULT *pResult = NULL;
 
-	OCI_SetStatementCacheSize(pConn->handleConnection, pConn->prefetchLimit);
+	OCI_SetStatementCacheSize(pConn->handleConnection, 0);
 	OCI_Statement *handleStmt = OCI_StatementCreate(pConn->handleConnection);
 
 #if UNICODE_UCS4
@@ -1106,8 +1110,8 @@ extern "C" DBDRV_RESULT __EXPORT DrvSelect(ORACLE_CONN *pConn, WCHAR *pwszQuery,
 #else
 	const UCS2CHAR *ucs2Query = pwszQuery;
 #endif
-	OCI_SetPrefetchMemory(handleStmt, pConn->prefetchLimit);
-	OCI_SetPrefetchSize(handleStmt, pConn->prefetchLimit);
+	OCI_SetPrefetchMemory(handleStmt, 0);
+	OCI_SetPrefetchSize(handleStmt, 0);
 
 	MutexLock(pConn->mutexQueryLock);
 	if(OCI_ExecuteStmt(handleStmt, pwszQuery) == true)
@@ -1143,9 +1147,9 @@ extern "C" DBDRV_RESULT __EXPORT DrvSelectPrepared(ORACLE_CONN *pConn, ORACLE_ST
 {
 	ORACLE_RESULT *pResult = NULL;
 
-	OCI_SetPrefetchMemory(stmt->handleStmt, pConn->prefetchLimit);
-	OCI_SetPrefetchSize(stmt->handleStmt, pConn->prefetchLimit);
-	OCI_SetStatementCacheSize(pConn->handleConnection, pConn->prefetchLimit);
+	OCI_SetPrefetchMemory(stmt->handleStmt, 0);
+	OCI_SetPrefetchSize(stmt->handleStmt, 0);
+	OCI_SetStatementCacheSize(pConn->handleConnection, 0);
 
 	MutexLock(pConn->mutexQueryLock);
 	if(OCI_Execute(stmt->handleStmt) == true)
@@ -1273,7 +1277,7 @@ extern "C" void __EXPORT DrvFetchFreeResult(ORACLE_UNBUFFERED_RESULT *result)
 
 	for(int i = 0; i < result->nCols; i++)
 	{
-		free(result->pBuffers[i].pData);
+		MemFree(result->pBuffers[i].pData);
 		if (result->pBuffers[i].lobLocator != NULL) // this maybe not needed anymore
 		{
 			free(result->pBuffers[i].lobLocator);
@@ -1328,7 +1332,7 @@ static ORACLE_UNBUFFERED_RESULT *ProcessUnbufferedQueryResults(ORACLE_CONN *pCon
 /**
  * Perform unbuffered SELECT query
  */
-extern "C" DBDRV_UNBUFFERED_RESULT __EXPORT DrvSelectUnbuffered(ORACLE_CONN *pConn, WCHAR *pwszQuery, DWORD *pdwError, WCHAR *errorText)
+extern "C" DBDRV_UNBUFFERED_RESULT __EXPORT DrvSelectUnbuffered(ORACLE_CONN *pConn, WCHAR *pwszQuery, DWORD *pdwError, WCHAR *errorText, UINT32 mode)
 {
 	ORACLE_UNBUFFERED_RESULT *result = NULL;
 
@@ -1336,6 +1340,16 @@ extern "C" DBDRV_UNBUFFERED_RESULT __EXPORT DrvSelectUnbuffered(ORACLE_CONN *pCo
 
 	OCI_SetStatementCacheSize(pConn->handleConnection, 0);
 	OCI_Statement *handleStmt = OCI_StatementCreate(pConn->handleConnection);
+
+	if (OCI_SFM_SCROLLABLE == mode)
+	{
+		if (!OCI_SetFetchMode(handleStmt, mode))
+		{
+			SetLastError(pConn);
+			nxlog_debug(2, _T("DrvSelectUnbuffered failed[%d]: %s"), pConn->lastErrorCode, pConn->lastErrorText);
+			*pdwError = IsConnectionError(pConn);
+		}
+	}
 
 	if(OCI_Prepare(handleStmt, (otext *)pwszQuery) == true)
 	{	
@@ -1407,6 +1421,46 @@ extern "C" DBDRV_UNBUFFERED_RESULT __EXPORT DrvSelectPreparedUnbuffered(ORACLE_C
 }
 
 /**
+ * Custom Fetch for result set
+ * Modes :
+ *  OCI_SFD_ABSOLUTE
+ *  OCI_SFD_RELATIVE
+ */
+extern "C" bool __EXPORT DrvFetchSeek(ORACLE_UNBUFFERED_RESULT *result, UINT32 mode, int offset)
+{
+	bool success = false;
+
+	if (result == NULL)
+		return success;
+
+	if (OCI_GetFetchMode(result->handleStmt) == OCI_SFM_SCROLLABLE)
+	{
+		success = OCI_SetFetchSize(result->handleStmt, 1); // Note: You must set the fetching size to 1
+
+		if (!success)
+		{
+			SetLastError(result->connection);
+			nxlog_debug(2, _T("[0]DrvFetchSeek failed[%d]: %s"), result->connection->lastErrorCode, result->connection->lastErrorText);
+			return success;
+		}
+	}
+
+	OCI_Resultset *resultSet = OCI_GetResultset(result->handleStmt);
+
+	if (OCI_FetchSeek(resultSet, mode, offset))
+	{
+		success = true;
+	}
+	else
+	{
+		SetLastError(result->connection);
+		nxlog_debug(2, _T("[1]DrvFetchSeek failed[%d]: %s"), result->connection->lastErrorCode, result->connection->lastErrorText);
+	}
+
+	return success;
+}
+
+/**
  * Fetch next result line from unbuffered SELECT results
  */
 extern "C" bool __EXPORT DrvFetch(ORACLE_UNBUFFERED_RESULT *result)
@@ -1428,7 +1482,7 @@ extern "C" bool __EXPORT DrvFetch(ORACLE_UNBUFFERED_RESULT *result)
 
 			if(OCI_IsNull(resultSet, i + 1) == true)
 			{
-				result->pBuffers[i].pData = (UCS2CHAR *)nx_memdup("\0\0\0", sizeof(UCS2CHAR));
+				result->pBuffers[i].pData = (WCHAR *)nx_memdup("\0\0\0", sizeof(WCHAR));
 				result->pBuffers[i].isNull = 1;
 				result->pBuffers[i].nLength = 0;
 			}
@@ -1437,12 +1491,26 @@ extern "C" bool __EXPORT DrvFetch(ORACLE_UNBUFFERED_RESULT *result)
 				UCS2CHAR *ucs2string = UCS2StringFromUCS4String(OCI_GetString(resultSet, i + 1));
 				int len = ucs2_strlen(ucs2string);
 
-				result->pBuffers[i].pData = (UCS2CHAR *)malloc((len + 31) * sizeof(UCS2CHAR));
-				memcpy(result->pBuffers[i].pData, ucs2string, len * sizeof(UCS2CHAR));
-				result->pBuffers[i].isNull = 0;
-				result->pBuffers[i].nLength = len * sizeof(UCS2CHAR);
-
-				free(ucs2string);
+				// If there is only end of string symbols, the result should be empty
+				if(len == 2 && _tcsicmp(OCI_GetString(resultSet, i + 1), _T("\r\n")) == 0)
+					result->pBuffers[i].pData = (WCHAR *)nx_memdup("\0\0\0", sizeof(WCHAR));
+				else
+				{
+					result->pBuffers[i].pData = (WCHAR*)malloc(sizeof(WCHAR) * (len + 1));
+#if UNICODE_UCS4
+					ucs2_to_ucs4(ucs2string, len, result->pBuffers[i].pData, len + 1);
+#else
+					memcpy(result->pBuffers[i].pData, ucs2string, len);
+#endif
+					result->pBuffers[i].pData[len] = 0;
+					result->pBuffers[i].isNull = 0;
+					result->pBuffers[i].nLength = len * sizeof(WCHAR);
+				}
+					
+				if (NULL != ucs2string)
+				{
+					free(ucs2string);
+				}
 			}
 			else
 			{
@@ -1454,18 +1522,14 @@ extern "C" bool __EXPORT DrvFetch(ORACLE_UNBUFFERED_RESULT *result)
 					if(nWidth > 0)
 					{
 						unsigned int max_len = nWidth, max_byte = 0;
-						result->pBuffers[i].pData = NULL;
+						result->pBuffers[i].pData = (WCHAR *)malloc((nWidth + 1) * sizeof(WCHAR));
 						WCHAR *pLob = (WCHAR*)malloc((nWidth + 1) * sizeof(WCHAR));
 
 						if(OCI_LobRead2(lob, (WCHAR*)pLob, (unsigned int*)&max_len, (unsigned int*)&max_byte))
 						{
-							UCS2CHAR *ucs2lob = UCS2StringFromUCS4String(pLob);
-							int len = ucs2_strlen(ucs2lob);
-
-							memcpy(result->pBuffers[i].pData, ucs2lob, len);
-							result->pBuffers[i].isNull = 0;
-							result->pBuffers[i].nLength = max_len * sizeof(UCS2CHAR);
-							free(ucs2lob);
+							wcsncpy(result->pBuffers[i].pData, pLob, nWidth);
+							result->pBuffers[i].pData[nWidth] = 0;
+							result->pBuffers[i].nLength = max_len * sizeof(WCHAR);
 						}
 						else
 						{
@@ -1477,7 +1541,7 @@ extern "C" bool __EXPORT DrvFetch(ORACLE_UNBUFFERED_RESULT *result)
 					}
 					else
 					{
-						result->pBuffers[i].pData = (UCS2CHAR *)nx_memdup("\0\0\0", sizeof(UCS2CHAR));
+						result->pBuffers[i].pData = (WCHAR *)nx_memdup("\0\0\0", sizeof(WCHAR));
 						result->pBuffers[i].isNull = 1;
 						result->pBuffers[i].nLength = 0;
 					}
@@ -1539,8 +1603,8 @@ extern "C" WCHAR __EXPORT *DrvGetFieldUnbuffered(ORACLE_UNBUFFERED_RESULT *resul
 	else
 	{
 		nLen = MIN(nBufSize - 1, ((int)(result->pBuffers[nColumn].nLength / sizeof(UCS2CHAR))));
-#if UNICODE_UCS4
-		ucs2_to_ucs4(result->pBuffers[nColumn].pData, nLen, pBuffer, nLen + 1);
+#if _WIN32
+		wcsncpy_s(pBuffer, nBufSize, result->pBuffers[nColumn]->pData, _TRUNCATE);
 #else
 		memcpy(pBuffer, result->pBuffers[nColumn].pData, nLen * sizeof(WCHAR));
 #endif
